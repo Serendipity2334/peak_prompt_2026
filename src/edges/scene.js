@@ -42,9 +42,15 @@ function loadVideoTexture(src) {
     const video = document.createElement('video');
     video.src = src;
     video.crossOrigin = 'anonymous';
+    video.autoplay = true;
     video.loop = true;
     video.muted = true;
     video.playsInline = true;
+    video.setAttribute('autoplay', '');
+    video.setAttribute('loop', '');
+    video.setAttribute('muted', '');
+    video.setAttribute('playsinline', '');
+    video.setAttribute('webkit-playsinline', '');
     video.preload = 'auto';
 
     const onReady = () => {

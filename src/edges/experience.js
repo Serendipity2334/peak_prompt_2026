@@ -54,14 +54,78 @@ function loadTexture(loader, url) {
   });
 }
 
+function pad2(n) {
+  return String(Math.floor(Math.abs(n)) % 100).padStart(2, '0');
+}
+
+/** Orario da sortKey (sec) o da stringa HH:MM[:SS]. */
+function formatClockTime(item) {
+  if (item && Number.isFinite(Number(item.sortKey))) {
+    const sec = Math.max(0, Math.floor(Number(item.sortKey)));
+    const h = Math.floor(sec / 3600) % 24;
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
+  }
+  const parts = String(item?.time || '').split(':');
+  if (parts.length >= 2) {
+    return parts.length >= 3
+      ? `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}:${parts[2].padStart(2, '0')}`
+      : `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
+  }
+  return '--:--';
+}
+
+/** Etichetta orario (canvas → plane) per la raggiera. */
+function makeTimeLabel(text) {
+  const w = 360;
+  const h = 80;
+  const dpr = 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.font = '500 36px "IBM Plex Mono", ui-monospace, monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, w / 2, h / 2);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.generateMipmaps = false;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    toneMapped: false
+  });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+  mesh.userData.aspect = w / h;
+  mesh.renderOrder = 120;
+  return mesh;
+}
+
 function loadVideoTexture(src) {
   return new Promise((resolve, reject) => {
     const video = document.createElement('video');
     video.src = src;
     video.crossOrigin = 'anonymous';
+    video.autoplay = true;
     video.loop = true;
     video.muted = true;
     video.playsInline = true;
+    video.setAttribute('autoplay', '');
+    video.setAttribute('loop', '');
+    video.setAttribute('muted', '');
+    video.setAttribute('playsinline', '');
+    video.setAttribute('webkit-playsinline', '');
     video.preload = 'auto';
 
     const onReady = () => {
@@ -96,7 +160,7 @@ export function createExperience(canvas) {
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setClearColor(0xffffff, 1);
+  renderer.setClearColor(0x000000, 1);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
@@ -111,6 +175,8 @@ export function createExperience(canvas) {
 
   /** @type {THREE.Mesh[]} */
   let meshes = [];
+  /** @type {THREE.Mesh[]} */
+  let timeLabels = [];
   /** @type {Array<Record<string, unknown>>} */
   let items = [];
   /** @type {Map<number, Promise<void>>} */
@@ -148,11 +214,11 @@ export function createExperience(canvas) {
   }
 
   function fitRadius() {
-    // stima con aspect tipico verticale ~0.56
+    // stima con aspect tipico verticale ~0.56; lascia spazio agli orari esterni
     const sample = sizeWithAspect(Math.min(halfW, halfH) * 0.28, 0.56);
     const diag = Math.hypot(sample.w, sample.h) * 0.5;
-    const pad = Math.min(halfW, halfH) * 0.08;
-    return Math.max(0.55, Math.min(halfW, halfH) - diag - pad);
+    const pad = Math.min(halfW, halfH) * 0.18;
+    return Math.max(0.5, Math.min(halfW, halfH) - diag - pad);
   }
 
   function setImageSize(mesh, tex) {
@@ -271,7 +337,6 @@ export function createExperience(canvas) {
 
     // solo thumbs → boot veloce
     const batch = 8;
-    meshes = [];
     for (let i = 0; i < n; i += batch) {
       const slice = items.slice(i, i + batch);
       const part = await Promise.all(
@@ -285,6 +350,22 @@ export function createExperience(canvas) {
       }
       layout();
       renderer.render(scene, camera);
+    }
+
+    // 8 spicchi equiangolari: un orario per spicchio (primo elemento dello spicchio)
+    const WEDGES = 8;
+    let prevIdx = -1;
+    for (let k = 0; k < WEDGES; k++) {
+      const i0 = Math.floor((k * n) / WEDGES);
+      if (i0 >= n || i0 === prevIdx) continue;
+      prevIdx = i0;
+      const label = makeTimeLabel(formatClockTime(items[i0]));
+      label.userData.index = i0;
+      label.userData.wedge = k;
+      // bordo dello spicchio (ogni 45° da ore 12, senso orario)
+      label.userData.angle0 = Math.PI / 2 - (k / WEDGES) * Math.PI * 2;
+      scene.add(label);
+      timeLabels.push(label);
     }
 
     intro = 0;
@@ -333,6 +414,7 @@ export function createExperience(canvas) {
 
     if (mode === 'sequence') {
       layoutSequence(fullW, fullH);
+      setTimeLabelsVisible(false);
       updateDetailMix();
       return;
     }
@@ -343,11 +425,15 @@ export function createExperience(canvas) {
       ensureFull(1);
     }
 
+    // g 0→1: chiusura a ventaglio verso le 12 (niente spin).
+    // Elemento 0 resta fermo sulle 12; gli altri chiudono su di lui.
+    // m 0→1: lo 0 slitta al centro e scala a cover.
     const g = easeInOut(Math.min(Math.max(intro, 0), 1));
     const m = easeInOut(Math.min(Math.max(intro - 1, 0), 1));
     const spacing = 1 - g;
-    const spin = g * Math.PI * 2;
-    const radius = THREE.MathUtils.lerp(fitRadius(), 0, g);
+    const rRing = fitRadius();
+    const angleHome = Math.PI / 2; // 12 / posizione fissa dell’elemento 0
+    const hideBehind = m > 0.02;
 
     for (let i = 0; i < n; i++) {
       const mesh = meshes[i];
@@ -357,52 +443,98 @@ export function createExperience(canvas) {
       const tile = tileSizeFor(mesh);
 
       if (isFirst) {
-        const angle = Math.PI / 2 + spin + (angle0 - Math.PI / 2) * spacing;
-        const cx = Math.cos(angle) * radius;
-        const cy = Math.sin(angle) * radius;
-        const rimRot = angle - Math.PI / 2;
-
-        // cover del viewport mantenendo aspect immagine → niente stretch
+        // fermo sulle 12 per tutta la chiusura; poi slitta al centro
+        const homeX = Math.cos(angleHome) * rRing;
+        const homeY = Math.sin(angleHome) * rRing;
         const cover = coverSize(fullW, fullH, aspect);
-        const x = THREE.MathUtils.lerp(cx, 0, Math.max(g, m));
-        const y = THREE.MathUtils.lerp(cy, 0, Math.max(g, m));
-        const z = THREE.MathUtils.lerp(0.08 * g, 0, m);
+
+        const x = THREE.MathUtils.lerp(homeX, 0, m);
+        const y = THREE.MathUtils.lerp(homeY, 0, m);
+        const z = THREE.MathUtils.lerp(0.06, 0, m);
         const sw = THREE.MathUtils.lerp(tile.w, cover.w, m);
         const sh = THREE.MathUtils.lerp(tile.h, cover.h, m);
 
         mesh.position.set(x, y, z);
         mesh.scale.set(sw, sh, 1);
-        mesh.rotation.z = THREE.MathUtils.lerp(rimRot, 0, Math.max(g, m));
-        // UV 1:1 sul piano (aspect già corretto)
+        mesh.rotation.z = 0; // già dritto alle 12
         mesh.material.uniforms.uCover.value = 0;
         mesh.material.uniforms.uOpacity.value = 1;
         mesh.material.uniforms.uCutoff.value = 1;
         mesh.renderOrder = n + 20;
         mesh.visible = true;
       } else {
-        const angle = Math.PI / 2 + spin + (angle0 - Math.PI / 2) * spacing;
-        const r = radius;
-        const rimRot = angle - Math.PI / 2;
+        // chiusura angolare verso le 12, stesso raggio (ventaglio)
+        const angle = angleHome + (angle0 - angleHome) * spacing;
+        const rimRot = angle - angleHome;
         const depth = g * (0.02 - Math.abs(i) * 0.0003);
-        const opacity = THREE.MathUtils.lerp(
-          1,
-          0,
-          Math.min(1, g * 0.85 + m * 1.2)
-        );
-        const sc = THREE.MathUtils.lerp(1, 0.5, g);
+        const sc = THREE.MathUtils.lerp(1, 0.72, g);
 
-        mesh.position.set(Math.cos(angle) * r, Math.sin(angle) * r, depth);
+        mesh.position.set(
+          Math.cos(angle) * rRing,
+          Math.sin(angle) * rRing,
+          depth
+        );
         mesh.scale.set(tile.w * sc, tile.h * sc, 1);
         mesh.rotation.z = THREE.MathUtils.lerp(rimRot, 0, g);
         mesh.material.uniforms.uCover.value = 0;
-        mesh.material.uniforms.uOpacity.value = opacity;
+        mesh.material.uniforms.uOpacity.value = hideBehind ? 0 : 1;
         mesh.material.uniforms.uCutoff.value = 1;
         mesh.renderOrder = n - i;
-        mesh.visible = opacity > 0.02;
+        mesh.visible = !hideBehind;
       }
     }
 
+    layoutTimeLabels(rRing, m);
     updateDetailMix();
+  }
+
+  function setTimeLabelsVisible(on) {
+    for (const label of timeLabels) label.visible = on;
+  }
+
+  function layoutTimeLabels(rRing, m) {
+    if (!timeLabels.length) return;
+    const short = Math.min(halfW, halfH);
+    const rLabel = rRing + short * 0.18;
+    const labelW = short * 0.3;
+
+    // bounds della prima immagine mentre zoom-a (per “sovrastare” gli orari)
+    const mesh0 = meshes[0];
+    const cx = mesh0?.position.x ?? 0;
+    const cy = mesh0?.position.y ?? 0;
+    const halfImgW = (mesh0?.scale.x ?? 0) * 0.5;
+    const halfImgH = (mesh0?.scale.y ?? 0) * 0.5;
+
+    for (const label of timeLabels) {
+      // posizione fissa di landing — non segue la chiusura a ventaglio
+      const angle = label.userData.angle0;
+      const x = Math.cos(angle) * rLabel;
+      const y = Math.sin(angle) * rLabel;
+      const aspect = label.userData.aspect || 4;
+      const lw = labelW;
+      const lh = lw / aspect;
+
+      label.position.set(x, y, 0.08);
+      label.scale.set(lw, lh, 1);
+      label.rotation.z = 0;
+
+      let opacity = 1;
+      if (m > 0.001 && mesh0) {
+        // quanto il bordo dell’immagine in zoom ha raggiunto il centro dell’etichetta
+        const dx = Math.abs(x - cx);
+        const dy = Math.abs(y - cy);
+        const marginX = lw * 0.35;
+        const marginY = lh * 0.35;
+        const coverX = (halfImgW - (dx - marginX)) / Math.max(lw * 0.6, 1e-3);
+        const coverY = (halfImgH - (dy - marginY)) / Math.max(lh * 0.6, 1e-3);
+        const cover = Math.min(1, Math.max(0, Math.min(coverX, coverY)));
+        opacity = 1 - cover;
+      }
+      if (m > 0.95) opacity = 0;
+
+      label.material.opacity = opacity;
+      label.visible = opacity > 0.02;
+    }
   }
 
   function layoutSequence(fullW, fullH) {
@@ -447,10 +579,11 @@ export function createExperience(canvas) {
   }
 
   function syncVideos() {
+    // in landing: nessun video in play
     if (mode !== 'sequence') {
-      const video = meshes[0]?.userData.video;
-      if (video && intro > 1.35 && meshes[0].userData.detail > 0.55) {
-        if (video.paused) video.play().catch(() => {});
+      for (let i = 0; i < meshes.length; i++) {
+        const video = meshes[i].userData.video;
+        if (video && !video.paused) video.pause();
       }
       return;
     }
@@ -582,10 +715,8 @@ export function createExperience(canvas) {
   }
 
   function hasActiveVideo() {
-    if (mode === 'sequence') {
-      return Boolean(meshes[getSeqIndex()]?.userData.video);
-    }
-    return Boolean(meshes[0]?.userData.video && intro > 1.3);
+    if (mode !== 'sequence') return false;
+    return Boolean(meshes[getSeqIndex()]?.userData.video);
   }
 
   function getItem() {
@@ -610,6 +741,13 @@ export function createExperience(canvas) {
       mesh.geometry.dispose();
     }
     meshes = [];
+    for (const label of timeLabels) {
+      scene.remove(label);
+      label.material.map?.dispose();
+      label.material.dispose();
+      label.geometry.dispose();
+    }
+    timeLabels = [];
     fullJobs.clear();
   }
 

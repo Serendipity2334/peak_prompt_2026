@@ -9,19 +9,24 @@
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/src/edges/edges.css" />
 </head>
-<body class="edges-page">
+<body class="edges-page is-landing">
   <canvas id="c"></canvas>
 
   <div id="ui">
-    <div class="brand">PEAK PROMPT · EDGES</div>
+    <div class="brand">PEAK PROMPT · OROLOGIO</div>
     <div class="hud" id="hud">
-      <span id="hud-idx">01 / 66</span>
-      <span id="hud-hint">scroll · foto + video · buio → luce</span>
+      <span id="hud-idx">RAGGRUPPA 0%</span>
+      <span id="hud-hint">centro · entra · scroll ↓ / ↑ raggiera</span>
     </div>
+    <button type="button" class="clock-center" id="clock-center" aria-label="Entra nella visualizzazione">
+      <div class="clock-title">PEAK PROMPT</div>
+      <div class="clock-sub">cronologia · falzarego → lagazuoi</div>
+      <div class="clock-cta">entra ↓</div>
+    </button>
     <a class="back" href="/" target="_self">percorso</a>
   </div>
 
-  <div id="boot">caricamento edges…</div>
+  <div id="boot">preparazione sequenza…</div>
 
   <script type="module" src="/src/edges/main.js"></script>
 </body>

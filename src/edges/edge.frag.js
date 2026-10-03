@@ -1,18 +1,22 @@
 /**
- * B/N sotto + Sobel edges blu/rosso (luce/ombra).
- * uCutoff: 1 = intact, 0 = fully erased (darkest first).
+ * B/N + Sobel blu/rosso.
+ * uMap = thumb, uMapHi = full; uDetailMix 0→1 blend senza stacco.
  */
 export default /* glsl */ `
 uniform sampler2D uMap;
+uniform sampler2D uMapHi;
+uniform float uDetailMix;
 uniform float uCutoff;
 uniform float uLight;
 uniform float uShadow;
+uniform float uCover;
+uniform float uOpacity;
 uniform vec2 uResolution;
 uniform vec2 uImageSize;
 varying vec2 vUv;
 
-const vec3 COL_BLUE = vec3(0.1216, 0.1765, 1.0); // #1f2dff
-const vec3 COL_RED = vec3(1.0, 0.2275, 0.1412);  // #ff3a24
+const vec3 COL_BLUE = vec3(0.1216, 0.1765, 1.0);
+const vec3 COL_RED = vec3(1.0, 0.2275, 0.1412);
 
 vec2 coverUV(vec2 uv, vec2 res, vec2 img) {
   float sA = res.x / max(res.y, 1.0);
@@ -26,19 +30,23 @@ vec2 coverUV(vec2 uv, vec2 res, vec2 img) {
   return outUv;
 }
 
+vec3 sampleMix(vec2 uv) {
+  vec3 lo = texture2D(uMap, uv).rgb;
+  vec3 hi = texture2D(uMapHi, uv).rgb;
+  return mix(lo, hi, clamp(uDetailMix, 0.0, 1.0));
+}
+
 float lumaAt(vec2 uv) {
-  vec3 rgb = texture2D(uMap, uv).rgb;
-  return dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+  return dot(sampleMix(uv), vec3(0.2126, 0.7152, 0.0722));
 }
 
 void main() {
-  vec2 uv = coverUV(vUv, uResolution, uImageSize);
+  vec2 uv = uCover > 0.5 ? coverUV(vUv, uResolution, uImageSize) : vUv;
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) discard;
 
-  vec3 tex = texture2D(uMap, uv).rgb;
+  vec3 tex = sampleMix(uv);
   float L = dot(tex, vec3(0.2126, 0.7152, 0.0722));
 
-  // erase dark → light
   if (L < (1.0 - uCutoff)) discard;
 
   vec2 texel = 1.0 / max(uImageSize, vec2(1.0));
@@ -64,10 +72,9 @@ void main() {
   grade = mix(grade, COL_BLUE, clamp(uShadow * 0.35, 0.0, 0.5));
   grade = mix(grade, COL_RED, clamp(uLight * 0.35, 0.0, 0.5));
 
-  // bianco e nero sotto, edge colorati sopra
   vec3 bw = vec3(L);
   vec3 color = mix(bw, grade, edge);
 
-  gl_FragColor = vec4(color, 1.0);
+  gl_FragColor = vec4(color, clamp(uOpacity, 0.0, 1.0));
 }
 `;

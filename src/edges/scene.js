@@ -123,6 +123,8 @@ export function createEdgesScene(canvas) {
         uCutoff: { value: 1 },
         uLight: { value: Number(item.light) || 0 },
         uShadow: { value: Number(item.shadow) || 0 },
+        uCover: { value: 1 },
+        uOpacity: { value: 1 },
         uResolution: { value: res.clone() },
         uImageSize: { value: new THREE.Vector2(w, h) }
       },
@@ -208,6 +210,25 @@ export function createEdgesScene(canvas) {
     }
   }
 
+  /** Porta la sequenza a `index` e avvia il video se presente. */
+  function playAt(index) {
+    const max = Math.max(meshes.length - 1, 0);
+    const i = Math.min(Math.max(index, 0), max);
+    progress = i;
+    applyProgress();
+    const video = meshes[i]?.userData.video;
+    if (video) {
+      try {
+        video.currentTime = 0;
+      } catch {
+        /* ignore */
+      }
+      const kickPlay = () => video.play().catch(() => {});
+      if (video.readyState >= 2) kickPlay();
+      else video.addEventListener('loadeddata', kickPlay, { once: true });
+    }
+  }
+
   function setProgress(value) {
     const max = Math.max(meshes.length - 1, 0);
     progress = Math.min(Math.max(value, 0), max);
@@ -216,6 +237,10 @@ export function createEdgesScene(canvas) {
 
   function addProgress(delta) {
     setProgress(progress + delta);
+  }
+
+  function getProgress() {
+    return progress;
   }
 
   function getIndex() {
@@ -280,6 +305,8 @@ export function createEdgesScene(canvas) {
     build,
     setProgress,
     addProgress,
+    playAt,
+    getProgress,
     getIndex,
     getPhoto,
     hasActiveVideo,

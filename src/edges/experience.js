@@ -54,11 +54,12 @@ function loadTexture(loader, url) {
   });
 }
 
+const CLOCK_WEDGES = 10;
+
 function pad2(n) {
   return String(Math.floor(Math.abs(n)) % 100).padStart(2, '0');
 }
 
-/** Orario da sortKey (sec) o da stringa HH:MM[:SS]. */
 function formatClockTime(item) {
   if (item && Number.isFinite(Number(item.sortKey))) {
     const sec = Math.max(0, Math.floor(Number(item.sortKey)));
@@ -76,7 +77,6 @@ function formatClockTime(item) {
   return '--:--';
 }
 
-/** Etichetta orario (canvas → plane) per la raggiera. */
 function makeTimeLabel(text) {
   const w = 360;
   const h = 80;
@@ -175,8 +175,10 @@ export function createExperience(canvas) {
 
   /** @type {THREE.Mesh[]} */
   let meshes = [];
+  /** @type {THREE.Group | null} */
+  let clockGroup = null;
   /** @type {THREE.Mesh[]} */
-  let timeLabels = [];
+  let clockLabels = [];
   /** @type {Array<Record<string, unknown>>} */
   let items = [];
   /** @type {Map<number, Promise<void>>} */
@@ -210,15 +212,21 @@ export function createExperience(canvas) {
 
   function tileSizeFor(mesh) {
     const short = Math.min(halfW, halfH);
-    return sizeWithAspect(short * 0.28, meshAspect(mesh));
+    return sizeWithAspect(short * 0.25, meshAspect(mesh));
   }
 
   function fitRadius() {
-    // stima con aspect tipico verticale ~0.56; lascia spazio agli orari esterni
-    const sample = sizeWithAspect(Math.min(halfW, halfH) * 0.28, 0.56);
-    const diag = Math.hypot(sample.w, sample.h) * 0.5;
-    const pad = Math.min(halfW, halfH) * 0.18;
-    return Math.max(0.5, Math.min(halfW, halfH) - diag - pad);
+    // ring più interno: spazio per tile (anche landscape) + orari esterni
+    const short = Math.min(halfW, halfH);
+    const portrait = sizeWithAspect(short * 0.25, 0.56);
+    const landscape = sizeWithAspect(short * 0.25, 1.6);
+    const diag =
+      Math.max(
+        Math.hypot(portrait.w, portrait.h),
+        Math.hypot(landscape.w, landscape.h)
+      ) * 0.5;
+    const pad = short * 0.26;
+    return Math.max(0.42, short - diag - pad);
   }
 
   function setImageSize(mesh, tex) {
@@ -229,19 +237,26 @@ export function createExperience(canvas) {
     mesh.userData.aspect = w / h;
   }
 
-  async function makeMesh(item, index) {
-    const thumbUrl = item.thumb || item.full || `/${item.imageBW}`;
-    const thumbTex = prepTex(await loadTexture(loader, thumbUrl));
-    const img = thumbTex.image;
+  function makeSolidTexture(hex = '#ffffff') {
+    const canvas = document.createElement('canvas');
+    canvas.width = 4;
+    canvas.height = 4;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    ctx.fillStyle = hex;
+    ctx.fillRect(0, 0, 4, 4);
+    return prepTex(new THREE.CanvasTexture(canvas));
+  }
+
+  function makeShaderMat(tex, item = {}) {
+    const img = tex.image;
     const iw = img.width || 1;
     const ih = img.height || 1;
-
-    const mat = new THREE.ShaderMaterial({
+    return new THREE.ShaderMaterial({
       vertexShader: edgeVert,
       fragmentShader: edgeFrag,
       uniforms: {
-        uMap: { value: thumbTex },
-        uMapHi: { value: thumbTex },
+        uMap: { value: tex },
+        uMapHi: { value: tex },
         uDetailMix: { value: 0 },
         uCutoff: { value: 1 },
         uLight: { value: Number(item.light) || 0 },
@@ -259,14 +274,49 @@ export function createExperience(canvas) {
       side: THREE.DoubleSide,
       toneMapped: false
     });
+  }
+
+  /** Ultimo layer della sequenza: sfondo bianco pieno. */
+  function makeWhiteEndMesh(index) {
+    const tex = makeSolidTexture('#ffffff');
+    const mat = makeShaderMat(tex, { light: 1, shadow: 0 });
+    mat.uniforms.uDetailMix.value = 1;
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+    mesh.userData.kind = 'end';
+    mesh.userData.isEndSlide = true;
+    mesh.userData.index = index;
+    mesh.userData.item = { kind: 'end', time: '' };
+    mesh.userData.video = null;
+    mesh.userData.texture = tex;
+    mesh.userData.thumbTex = tex;
+    mesh.userData.fullReady = true;
+    mesh.userData.detail = 1;
+    mesh.userData.aspect = 1;
+    mesh.userData.angle0 = 0;
+    mesh.visible = false;
+    return mesh;
+  }
+
+  async function makeMesh(item, index) {
+    const thumbUrl = item.thumb || item.full || `/${item.imageBW}`;
+    const thumbTex = prepTex(await loadTexture(loader, thumbUrl));
+    const img = thumbTex.image;
+    const iw = img.width || 1;
+    const ih = img.height || 1;
+
+    const mat = makeShaderMat(thumbTex, item);
 
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
     mesh.userData.kind = item.kind || 'photo';
+    mesh.userData.isEndSlide = false;
     mesh.userData.index = index;
     mesh.userData.item = item;
     mesh.userData.video = null;
     mesh.userData.texture = thumbTex;
     mesh.userData.thumbTex = thumbTex;
+    mesh.userData.floatPhase = Math.random() * Math.PI * 2;
+    mesh.userData.floatSpeed = 0.35 + Math.random() * 0.4;
+    mesh.userData.floatAmp = 0.01 + Math.random() * 0.008;
     mesh.userData.fullReady = false;
     mesh.userData.detail = 0;
     mesh.userData.aspect = iw / ih;
@@ -288,9 +338,12 @@ export function createExperience(canvas) {
     if (fullJobs.has(index)) return fullJobs.get(index);
 
     const mesh = meshes[index];
-    if (mesh.userData.fullReady) return Promise.resolve();
+    if (mesh.userData.isEndSlide || mesh.userData.fullReady) {
+      return Promise.resolve();
+    }
 
     const item = items[index];
+    if (!item) return Promise.resolve();
     const job = (async () => {
       try {
         let fullTex;
@@ -352,21 +405,12 @@ export function createExperience(canvas) {
       renderer.render(scene, camera);
     }
 
-    // 8 spicchi equiangolari: un orario per spicchio (primo elemento dello spicchio)
-    const WEDGES = 8;
-    let prevIdx = -1;
-    for (let k = 0; k < WEDGES; k++) {
-      const i0 = Math.floor((k * n) / WEDGES);
-      if (i0 >= n || i0 === prevIdx) continue;
-      prevIdx = i0;
-      const label = makeTimeLabel(formatClockTime(items[i0]));
-      label.userData.index = i0;
-      label.userData.wedge = k;
-      // bordo dello spicchio (ogni 45° da ore 12, senso orario)
-      label.userData.angle0 = Math.PI / 2 - (k / WEDGES) * Math.PI * 2;
-      scene.add(label);
-      timeLabels.push(label);
-    }
+    buildClockFace(items);
+
+    // fine sequenza → sfondo bianco (non in raggiera)
+    const endMesh = makeWhiteEndMesh(n);
+    scene.add(endMesh);
+    meshes.push(endMesh);
 
     intro = 0;
     seq = 0;
@@ -414,7 +458,7 @@ export function createExperience(canvas) {
 
     if (mode === 'sequence') {
       layoutSequence(fullW, fullH);
-      setTimeLabelsVisible(false);
+      setClockVisible(false);
       updateDetailMix();
       return;
     }
@@ -434,9 +478,15 @@ export function createExperience(canvas) {
     const rRing = fitRadius();
     const angleHome = Math.PI / 2; // 12 / posizione fissa dell’elemento 0
     const hideBehind = m > 0.02;
+    // fluttuazione piena a riposo, si attenua chiudendo e sparisce nello zoom
+    const floatStr = (1 - m) * (0.25 + 0.75 * (1 - g));
 
     for (let i = 0; i < n; i++) {
       const mesh = meshes[i];
+      if (mesh.userData.isEndSlide) {
+        mesh.visible = false;
+        continue;
+      }
       const angle0 = mesh.userData.angle0;
       const isFirst = i === 0;
       const aspect = meshAspect(mesh);
@@ -457,6 +507,7 @@ export function createExperience(canvas) {
         mesh.position.set(x, y, z);
         mesh.scale.set(sw, sh, 1);
         mesh.rotation.z = 0; // già dritto alle 12
+        applyFloat(mesh, floatStr);
         mesh.material.uniforms.uCover.value = 0;
         mesh.material.uniforms.uOpacity.value = 1;
         mesh.material.uniforms.uCutoff.value = 1;
@@ -476,6 +527,7 @@ export function createExperience(canvas) {
         );
         mesh.scale.set(tile.w * sc, tile.h * sc, 1);
         mesh.rotation.z = THREE.MathUtils.lerp(rimRot, 0, g);
+        applyFloat(mesh, floatStr);
         mesh.material.uniforms.uCover.value = 0;
         mesh.material.uniforms.uOpacity.value = hideBehind ? 0 : 1;
         mesh.material.uniforms.uCutoff.value = 1;
@@ -484,57 +536,99 @@ export function createExperience(canvas) {
       }
     }
 
-    layoutTimeLabels(rRing, m);
+    layoutClockFace(m);
     updateDetailMix();
   }
 
-  function setTimeLabelsVisible(on) {
-    for (const label of timeLabels) label.visible = on;
+  /** Leggero drift per-tile; strength 1 in landing, si spegne con chiusura/zoom. */
+  function applyFloat(mesh, strength) {
+    if (strength <= 0.01) return;
+    const t = performance.now() * 0.001;
+    const ph = mesh.userData.floatPhase || 0;
+    const sp = mesh.userData.floatSpeed || 0.5;
+    const amp = (mesh.userData.floatAmp || 0.01) * strength;
+    mesh.position.x += Math.sin(t * sp + ph) * amp;
+    mesh.position.y += Math.cos(t * sp * 0.87 + ph * 1.3) * amp * 0.8;
+    mesh.rotation.z += Math.sin(t * sp * 0.55 + ph * 0.7) * 0.014 * strength;
   }
 
-  function layoutTimeLabels(rRing, m) {
-    if (!timeLabels.length) return;
+  function setClockVisible(on) {
+    if (clockGroup) clockGroup.visible = on;
+  }
+
+  /**
+   * Orari per i 10 spicchi (niente assi / pallini).
+   */
+  function buildClockFace(itemList) {
+    disposeClock();
+    const list = itemList || [];
+    if (!list.length) return;
+
+    clockGroup = new THREE.Group();
+    clockGroup.renderOrder = -20;
+
+    const n = list.length;
+    const wedgeFirst = new Array(CLOCK_WEDGES).fill(-1);
+    for (let i = 0; i < n; i++) {
+      let wedge = Math.floor((i * CLOCK_WEDGES) / n);
+      if (wedge >= CLOCK_WEDGES) wedge = CLOCK_WEDGES - 1;
+      if (wedgeFirst[wedge] < 0) wedgeFirst[wedge] = i;
+    }
+
+    for (let k = 0; k < CLOCK_WEDGES; k++) {
+      const i0 = wedgeFirst[k];
+      if (i0 < 0) continue;
+      const angle = Math.PI / 2 - (k / CLOCK_WEDGES) * Math.PI * 2;
+      const label = makeTimeLabel(formatClockTime(list[i0]));
+      label.userData.angle = angle;
+      label.userData.wedge = k;
+      clockGroup.add(label);
+      clockLabels.push(label);
+    }
+
+    scene.add(clockGroup);
+  }
+
+  function layoutClockFace(m) {
+    if (!clockGroup) return;
     const short = Math.min(halfW, halfH);
-    const rLabel = rRing + short * 0.18;
-    const labelW = short * 0.3;
+    const labelW = short * 0.28;
+    const rLabel = short * 0.96;
 
-    // bounds della prima immagine mentre zoom-a (per “sovrastare” gli orari)
-    const mesh0 = meshes[0];
-    const cx = mesh0?.position.x ?? 0;
-    const cy = mesh0?.position.y ?? 0;
-    const halfImgW = (mesh0?.scale.x ?? 0) * 0.5;
-    const halfImgH = (mesh0?.scale.y ?? 0) * 0.5;
-
-    for (const label of timeLabels) {
-      // posizione fissa di landing — non segue la chiusura a ventaglio
-      const angle = label.userData.angle0;
-      const x = Math.cos(angle) * rLabel;
-      const y = Math.sin(angle) * rLabel;
+    for (const label of clockLabels) {
+      const a = label.userData.angle;
       const aspect = label.userData.aspect || 4;
       const lw = labelW;
       const lh = lw / aspect;
-
-      label.position.set(x, y, 0.08);
+      const labelIn =
+        (lw * 0.5) * Math.abs(Math.cos(a)) +
+        (lh * 0.5) * Math.abs(Math.sin(a));
+      const maxR = Math.min(halfW - lw * 0.52, halfH - lh * 0.52);
+      const r = Math.min(rLabel + labelIn * 0.15, maxR);
+      label.position.set(Math.cos(a) * r, Math.sin(a) * r, 0.08);
       label.scale.set(lw, lh, 1);
       label.rotation.z = 0;
-
-      let opacity = 1;
-      if (m > 0.001 && mesh0) {
-        // quanto il bordo dell’immagine in zoom ha raggiunto il centro dell’etichetta
-        const dx = Math.abs(x - cx);
-        const dy = Math.abs(y - cy);
-        const marginX = lw * 0.35;
-        const marginY = lh * 0.35;
-        const coverX = (halfImgW - (dx - marginX)) / Math.max(lw * 0.6, 1e-3);
-        const coverY = (halfImgH - (dy - marginY)) / Math.max(lh * 0.6, 1e-3);
-        const cover = Math.min(1, Math.max(0, Math.min(coverX, coverY)));
-        opacity = 1 - cover;
-      }
-      if (m > 0.95) opacity = 0;
-
-      label.material.opacity = opacity;
-      label.visible = opacity > 0.02;
     }
+
+    let opacity = 1;
+    if (m > 0.02) opacity = Math.max(0, 1 - (m - 0.02) / 0.55);
+    if (m > 0.85) opacity = 0;
+
+    for (const label of clockLabels) {
+      label.material.opacity = opacity;
+    }
+    clockGroup.visible = opacity > 0.02;
+  }
+
+  function disposeClock() {
+    if (clockGroup) scene.remove(clockGroup);
+    for (const label of clockLabels) {
+      label.material.map?.dispose();
+      label.material.dispose();
+      label.geometry.dispose();
+    }
+    clockLabels = [];
+    clockGroup = null;
   }
 
   function layoutSequence(fullW, fullH) {
@@ -550,7 +644,10 @@ export function createExperience(canvas) {
 
     for (let i = 0; i < n; i++) {
       const mesh = meshes[i];
-      const cover = coverSize(fullW, fullH, meshAspect(mesh));
+      const isEnd = mesh.userData.isEndSlide;
+      const cover = isEnd
+        ? { w: fullW, h: fullH }
+        : coverSize(fullW, fullH, meshAspect(mesh));
       mesh.position.set(0, 0, -i * Z_GAP);
       // stesso sizing del morph finale (aspect immagine, cover viewport)
       mesh.scale.set(cover.w, cover.h, 1);
@@ -560,6 +657,7 @@ export function createExperience(canvas) {
       mesh.renderOrder = n - i;
 
       if (i === n - 1) {
+        // base bianca: sempre sotto, piena
         mesh.visible = true;
         mesh.material.uniforms.uCutoff.value = 1;
         continue;
@@ -650,7 +748,7 @@ export function createExperience(canvas) {
     intro = Math.min(Math.max(at, 0), 1.999);
     for (const mesh of meshes) {
       mesh.material.uniforms.uCutoff.value = 1;
-      mesh.visible = true;
+      mesh.visible = !mesh.userData.isEndSlide;
     }
     layout();
     syncVideos();
@@ -701,8 +799,13 @@ export function createExperience(canvas) {
     layout();
   }
 
+  function needsIdleMotion() {
+    return mode === 'intro' && intro < 1.85;
+  }
+
   function render() {
-    updateDetailMix();
+    if (mode === 'intro') layout();
+    else updateDetailMix();
     if (mode === 'sequence' || intro > 1.3) {
       for (const mesh of meshes) {
         if (mesh.userData.video && mesh.visible && mesh.userData.detail > 0.2) {
@@ -720,7 +823,11 @@ export function createExperience(canvas) {
   }
 
   function getItem() {
-    if (mode === 'sequence') return items[getSeqIndex()] || null;
+    if (mode === 'sequence') {
+      const mesh = meshes[getSeqIndex()];
+      if (mesh?.userData.isEndSlide) return mesh.userData.item;
+      return items[getSeqIndex()] || null;
+    }
     return items[0] || null;
   }
 
@@ -741,13 +848,7 @@ export function createExperience(canvas) {
       mesh.geometry.dispose();
     }
     meshes = [];
-    for (const label of timeLabels) {
-      scene.remove(label);
-      label.material.map?.dispose();
-      label.material.dispose();
-      label.geometry.dispose();
-    }
-    timeLabels = [];
+    disposeClock();
     fullJobs.clear();
   }
 
@@ -769,6 +870,7 @@ export function createExperience(canvas) {
     getMode: () => mode,
     getItem,
     hasActiveVideo,
+    needsIdleMotion,
     get count() {
       return items.length;
     },

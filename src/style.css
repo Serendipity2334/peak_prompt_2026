@@ -1,0 +1,95 @@
+:root {
+  --blue: #2348ff;
+  --red: #ff3a24;
+  --magenta: #ff3df0;
+  --ink: #ffffff;
+  --muted: rgba(255, 255, 255, 0.65);
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  --terminal: "VT323", "IBM Plex Mono", monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background: var(--blue);
+  color: var(--ink);
+  font-family: var(--mono);
+  overflow-x: hidden;
+}
+
+/* Canvas fisso: lo scroll avviene su #scroll-space */
+#c {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  z-index: 0;
+}
+
+#scroll-space {
+  position: relative;
+  z-index: 1;
+  height: 800vh;
+  pointer-events: none;
+}
+
+#ui {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  padding: 1rem 1.1rem;
+}
+
+.brand .title {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  font-weight: 500;
+}
+
+.brand .sub {
+  margin-top: 0.25rem;
+  font-size: 0.68rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.hud {
+  position: absolute;
+  left: 1.1rem;
+  top: 4.2rem;
+  font-size: 0.68rem;
+  line-height: 1.55;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.hud span {
+  color: var(--ink);
+  font-family: var(--terminal);
+  font-size: 1.15rem;
+  letter-spacing: 0.02em;
+}
+
+#boot {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  background: var(--blue);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+#boot[hidden] { display: none; }
+
+@media (max-width: 390px) {
+  .hud { top: 4.6rem; font-size: 0.62rem; }
+  .hud span { font-size: 1rem; }
+}

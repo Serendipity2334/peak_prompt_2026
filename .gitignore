@@ -1,0 +1,44 @@
+# Dependencies & tooling
+node_modules/
+.tools/
+dist/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Generated
+assets-data.json
+
+# Media (large binary assets — keep locally, not on GitHub)
+*.jpg
+*.jpeg
+*.png
+*.JPG
+*.JPEG
+*.PNG
+*.gif
+*.webp
+*.mp4
+*.mov
+*.mpg
+*.MPG
+*.mpeg
+*.avi
+*.webm
+
+# Spreadsheets & documents
+*.xlsx
+*.xls
+*.csv
+*.pdf
+*.PDF
+
+# Optional: ignore whole media folders as a belt-and-suspenders
+assets/images/
+assets/videos/
+assets/scanners/
+assets/data/**/*.xlsx
+dati_foto.xlsx

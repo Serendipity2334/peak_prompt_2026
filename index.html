@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Peak Prompt — Falzarego → Lagazuoi</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=VT323&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <!-- Canvas 3D fisso; lo scroll avviene sulla pagina alta -->
+  <canvas id="c"></canvas>
+
+  <!-- Spazio di scroll: il progresso p guida la camera -->
+  <div id="scroll-space" aria-hidden="true"></div>
+
+  <div id="ui">
+    <header class="brand">
+      <div class="title">PEAK PROMPT</div>
+      <div class="sub">Passo Falzarego → Lagazuoi · 2 ottobre 2026</div>
+    </header>
+
+    <div class="hud" id="hud">
+      <div>POS <span id="hud-pos">—</span></div>
+      <div>P <span id="hud-p">0.000</span></div>
+      <div>QUOTA <span id="hud-ele">—</span></div>
+      <div>ORA <span id="hud-time">—</span></div>
+    </div>
+  </div>
+
+  <div id="boot">caricamento percorso…</div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

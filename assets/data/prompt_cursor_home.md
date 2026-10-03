@@ -49,7 +49,7 @@ Non inventare dati: ogni numero mostrato deve venire da `percorso.json`.
 2. **Percorso.** Una `CatmullRomCurve3` costruita sui punti di `track`. Disegnala come linea sottile e luminosa, più una seconda linea proiettata sul piano di base (y = 0) collegata alla prima da sottili linee verticali ogni N punti, così si legge il dislivello.
 3. **Camera.** Segue la curva in funzione di `p`: posizione = punto della curva a `p`, leggermente sopra e dietro; sguardo verso un punto più avanti sulla curva. Movimento lento e fluido, senza scossoni.
 4. **Immagini.** Ogni foto è un `PlaneGeometry` con le proporzioni reali dell'immagine, posizionato sul punto della curva più vicino a `dist` e ruotato di fronte alla camera (billboard morbido). Offset laterale alternato (sinistra e destra) per evitare sovrapposizioni tra foto ravvicinate (per esempio 15 e 16, 25 e 26, 29 e 30).
-5. **Ambiente.** Sfondo e nebbia (`scene.fog`) che passano dal blu profondo al grigio al rosso in base a `p`. Piano di base con una griglia molto discreta. Nessun terreno inventato: lo spazio è astratto, il rilievo lo dà solo la traccia.
+5. **Ambiente.** Nessun terreno inventato: lo spazio è astratto, il rilievo lo dà solo la traccia. Il piano di base è una **griglia a tasselli** (vedi "Estetica"), non un pavimento realistico. Sfondo e nebbia (`scene.fog`) passano dal blu elettrico al grigio al rosso in base a `p`; nei tratti di galleria (foto con `shadow > 0.15`) virano verso il nero.
 
 ## La soglia (il cuore del progetto)
 
@@ -82,6 +82,35 @@ uHigh = clamp(c + w/2, 0, 1)
 
 Applica la stessa logica, in versione semplificata, anche all'ambiente: il colore di sfondo e della nebbia è `mix(uBlue, grigio, uRed)` secondo quanta parte della scala 0–1 cade sotto `uLow`, nell'intermezzo e sopra `uHigh`.
 
+## Estetica: "laboratorio di visione artificiale"
+
+Il sito deve sembrare **lo schermo di uno strumento scientifico che sta guardando la montagna**, non un sito di viaggio. Riferimenti visivi: overlay di debug di computer vision (bounding box, ID, coordinate), mappe a tasselli di dati, tavole scientifiche che affiancano immagine in grigio e immagine in falsi colori, reti di nodi collegati da linee sottili. Grezzo e preciso insieme, niente effetti "patinati".
+
+**Colore**
+- Il blu non è solo un colore della soglia: è **il campo di partenza**. A `p = 0` lo sfondo è un **blu elettrico pieno e piatto** (circa `#2348ff`), come uno schermo di laboratorio.
+- Sopra il blu, tutto ciò che è dato o struttura è chiaro: linee bianche sottili, tasselli azzurro-trasparenti, testi bianchi.
+- Il rosso (circa `#ff3a24`) arriva salendo e domina alla vetta. Il grigio resta sempre neutro, senza tinta.
+- Nei tratti di galleria il fondo diventa **nero `#000`**, con i pixel blu e rossi che emergono come punti, simile a una mappa di dati su nero.
+- Un unico colore d'accento per l'interfaccia: **magenta `#ff3df0`**, usato solo per le linee di collegamento e per il cursore. Niente altri colori: niente verdi, gialli o arcobaleni da termocamera.
+
+**Tasselli**
+- Il piano di base è una griglia di quadrati. I quadrati vicini alla camera e alle foto si "accendono" (riempimento bianco trasparente al 15–25% con bordo sottile), quelli lontani restano spenti. L'effetto è una mappa che si rivela per blocchi mentre si sale.
+- Ogni tassello acceso prende il colore della soglia in base alla quota del punto di traccia che contiene: blu sotto `uLow`, grigio nell'intermezzo, rosso sopra `uHigh`.
+
+**Le foto come "rilevamenti"**
+- Ogni foto ha una cornice sottile bianca (1 px) e, in alto a sinistra, un'etichetta monospace minuscola nello stile di un sistema di tracciamento: `ID 13 · 15:20:07 · 2.429 m · L 0.079`.
+- Sulle zone rosse e blu di ogni foto disegna dei **bounding box**: rettangoli sottili attorno alle macchie più grandi (calcolati una volta al caricamento, per esempio con un'analisi delle componenti connesse su una versione ridotta a 64 px della maschera). Box blu per l'ombra, box rossi per la luce.
+- Le foto sono collegate tra loro, in ordine cronologico, da **linee magenta sottili**, come la rete di nodi di un grafo. La foto in focus emette linee verso le 3–4 foto con il bilanciamento luce/ombra più simile, in qualunque punto del percorso si trovino.
+
+**HUD (testi sovrapposti)**
+- In alto a sinistra, in monospace, i valori grezzi come in un overlay di debug: `POS X 0.412 Y 0.268`, `P 0.537`, `SOGLIA 0.31 / 0.74`, `TAPPA 14/30`.
+- Tipografia: **tutto in monospace**. *IBM Plex Mono* per i testi piccoli e i dati, *VT323* (font da terminale) per i numeri grandi dell'HUD e per la quota. Niente font display, niente serif.
+- I testi dell'HUD possono "tremolare" leggermente (cifre che si aggiornano in continuo), ma senza animazioni decorative.
+
+**Grana**
+- Dithering Bayer anche sullo sfondo e sulle transizioni di colore, non solo nelle foto: la grana a puntini è la firma visiva del sito.
+- Niente gradienti morbidi, niente ombre, niente bordi arrotondati, niente glassmorphism.
+
 ## Interfaccia (sovrapposta al canvas, HTML/CSS)
 
 - **In alto a sinistra:** "PEAK PROMPT" e, sotto, "Passo Falzarego → Lagazuoi · 2 ottobre 2026".
@@ -90,8 +119,7 @@ Applica la stessa logica, in versione semplificata, anche all'ambiente: il color
 - **Accanto alla barra:** un mini profilo altimetrico 2D (SVG) con un punto per ogni foto e un cursore sulla posizione corrente; cliccando su un punto si scorre fino a quella tappa.
 - **Foto in focus** (quella più vicina alla camera): un'etichetta piccola con numero, ora (con "stimata" se `timeEstimated`), quota, luma e le tre percentuali luce / ombra / neutro.
 - **Menu discreto:** Percorso · Metodo · Archivio · Dati · Progetto. Per ora solo la voce Percorso è attiva.
-- **Tipografia:** un display condensato in maiuscolo per titolo e quota (per esempio *Big Shoulders Display*) e un monospace per i dati (per esempio *IBM Plex Mono*), da Google Fonts.
-- **Palette:** blu `#2533ff`, rosso `#ff3a24`, grigi neutri appena freddi, nero `#0a0b10`. Niente gradienti decorativi, niente ombre morbide.
+- **Tipografia e palette:** vedi la sezione "Estetica".
 
 ## Sobrietà energetica (come Solar Protocol)
 
@@ -116,7 +144,8 @@ src/scene.js         // curva, camera, ambiente
 src/threshold.js     // calcolo uLow/uHigh da p e correzione locale
 src/photos.js        // caricamento e piani delle immagini
 src/shaders/photo.vert / photo.frag
-src/ui.js            // overlay, barra soglia, mini profilo
+src/ui.js            // overlay, HUD, barra soglia, mini profilo
+src/boxes.js         // bounding box delle zone rosse e blu
 src/style.css
 assets/…             // già esistente, non modificare
 ```
@@ -128,7 +157,8 @@ assets/…             // già esistente, non modificare
    1. percorso 3D + camera che segue lo scroll;
    2. immagini nello spazio;
    3. shader della soglia;
-   4. interfaccia;
-   5. ottimizzazioni e fallback.
+   4. estetica (tasselli, bounding box, linee, HUD);
+   5. interfaccia;
+   6. ottimizzazioni e fallback.
 3. Non modificare i file in `assets/`.
 4. Commenta il codice in italiano, in modo breve, spiegando soprattutto la logica della soglia.

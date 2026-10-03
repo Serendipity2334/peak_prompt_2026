@@ -11,6 +11,7 @@ dist/
 
 # Generated
 assets-data.json
+.cache/
 
 # Media (large binary assets — keep locally, not on GitHub)
 *.jpg

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Peak Prompt — Layers</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=VT323&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/style.css" />
+  <link rel="stylesheet" href="/src/layers/layers.css" />
+</head>
+<body class="layers-page">
+  <canvas id="c"></canvas>
+
+  <div id="ui">
+    <header class="brand">
+      <div class="title">PEAK PROMPT · LAYERS</div>
+      <div class="sub">rosso → blu → b/n · trascina · scroll · toggle b/n</div>
+    </header>
+
+    <div class="hud" id="hud">
+      <div>TAPPA <span id="hud-idx">1/30</span></div>
+      <div>ID <span id="hud-id">—</span></div>
+      <div>LAYER <span id="hud-layer">ROSSO</span></div>
+      <div>B/N <span id="hud-bw">ON</span></div>
+      <div>Z <span id="hud-z">0.00</span></div>
+      <div>QUOTA <span id="hud-ele">—</span></div>
+      <div>ORA <span id="hud-time">—</span></div>
+    </div>
+
+    <nav class="layer-nav" aria-label="Navigazione tappe">
+      <button type="button" id="btn-bw" aria-pressed="true">B/N on</button>
+      <button type="button" id="btn-prev">← prev</button>
+      <button type="button" id="btn-next">next →</button>
+      <a class="back" href="/" target="_self">percorso</a>
+    </nav>
+  </div>
+
+  <div id="boot">caricamento layer…</div>
+
+  <script type="module" src="/src/layers/main.js"></script>
+</body>
+</html>

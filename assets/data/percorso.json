@@ -8,7 +8,7 @@
   "eleMin": 2065,
   "eleMax": 2682,
   "distTotal": 4850,
-  "notes": "Track da Wikiloc (GPX), tagliata alle 16:40. Quote lisciate (media mobile). In galleria il GPS è meno preciso. Orari 27 e 28 stimati."
+  "notes": "Track da Wikiloc (GPX), tagliata alle 16:40. Quote lisciate (media mobile). In galleria il GPS è meno preciso. Orari 27 e 28 stimati. thrLow/thrHigh: soglie sulla luminanza 0–1 dell'immagine in bianco e nero che riproducono le percentuali di ombra e luce misurate. lightRank: ordine dalla foto più buia (1) alla più luminosa (30), per luma."
  },
  "photos": [
   {
@@ -26,7 +26,18 @@
    "light": 0.0032,
    "shadow": 0.0294,
    "neutral": 0.9674,
-   "phyphoxFile": "assets/data/1.xlsx"
+   "phyphoxFile": "assets/data/1.xlsx",
+   "sunAzimuth": 201.8,
+   "sunElevation": 37.5,
+   "imageBW": "assets/images/bianco_nero/1.jpg",
+   "thrLow": 0.1216,
+   "thrHigh": 0.9059,
+   "lightRank": 27,
+   "zoomFocus": {
+    "x": 0.902,
+    "y": 0.561,
+    "zone": "ombra"
+   }
   },
   {
    "order": 2,
@@ -43,7 +54,18 @@
    "light": 0.0044,
    "shadow": 0.0125,
    "neutral": 0.9831,
-   "phyphoxFile": "assets/data/2.xlsx"
+   "phyphoxFile": "assets/data/2.xlsx",
+   "sunAzimuth": 202.9,
+   "sunElevation": 37.3,
+   "imageBW": "assets/images/bianco_nero/2.jpg",
+   "thrLow": 0.0667,
+   "thrHigh": 0.9333,
+   "lightRank": 21,
+   "zoomFocus": {
+    "x": 0.458,
+    "y": 0.616,
+    "zone": "ombra"
+   }
   },
   {
    "order": 3,
@@ -60,7 +82,18 @@
    "light": 0.0096,
    "shadow": 0.0206,
    "neutral": 0.9698,
-   "phyphoxFile": "assets/data/4.xlsx"
+   "phyphoxFile": "assets/data/4.xlsx",
+   "sunAzimuth": 205.2,
+   "sunElevation": 36.8,
+   "imageBW": "assets/images/bianco_nero/IMG_9151.jpg",
+   "thrLow": 0.0902,
+   "thrHigh": 0.9098,
+   "lightRank": 26,
+   "zoomFocus": {
+    "x": 0.458,
+    "y": 0.597,
+    "zone": "ombra"
+   }
   },
   {
    "order": 4,
@@ -77,7 +110,18 @@
    "light": 0.0052,
    "shadow": 0.013,
    "neutral": 0.9818,
-   "phyphoxFile": null
+   "phyphoxFile": null,
+   "sunAzimuth": 207.3,
+   "sunElevation": 36.2,
+   "imageBW": "assets/images/bianco_nero/4.jpg",
+   "thrLow": 0.0941,
+   "thrHigh": 0.8667,
+   "lightRank": 30,
+   "zoomFocus": {
+    "x": 0.213,
+    "y": 0.199,
+    "zone": "luce"
+   }
   },
   {
    "order": 5,
@@ -94,7 +138,18 @@
    "light": 0.0109,
    "shadow": 0.0145,
    "neutral": 0.9746,
-   "phyphoxFile": "assets/data/5.xlsx"
+   "phyphoxFile": "assets/data/5.xlsx",
+   "sunAzimuth": 207.5,
+   "sunElevation": 36.2,
+   "imageBW": "assets/images/bianco_nero/5.jpg",
+   "thrLow": 0.0549,
+   "thrHigh": 0.902,
+   "lightRank": 24,
+   "zoomFocus": {
+    "x": 0.105,
+    "y": 0.427,
+    "zone": "luce"
+   }
   },
   {
    "order": 6,
@@ -111,7 +166,18 @@
    "light": 0.0012,
    "shadow": 0.0199,
    "neutral": 0.9789,
-   "phyphoxFile": "assets/data/6.xlsx"
+   "phyphoxFile": "assets/data/6.xlsx",
+   "sunAzimuth": 208.3,
+   "sunElevation": 35.9,
+   "imageBW": "assets/images/bianco_nero/6.jpg",
+   "thrLow": 0.0627,
+   "thrHigh": 0.949,
+   "lightRank": 17,
+   "zoomFocus": {
+    "x": 0.612,
+    "y": 0.373,
+    "zone": "ombra"
+   }
   },
   {
    "order": 7,
@@ -128,7 +194,18 @@
    "light": 0.004,
    "shadow": 0.0129,
    "neutral": 0.9831,
-   "phyphoxFile": "assets/data/7.xlsx"
+   "phyphoxFile": "assets/data/7.xlsx",
+   "sunAzimuth": 210.8,
+   "sunElevation": 35.2,
+   "imageBW": "assets/images/bianco_nero/7.jpg",
+   "thrLow": 0.0941,
+   "thrHigh": 0.9059,
+   "lightRank": 23,
+   "zoomFocus": {
+    "x": 0.389,
+    "y": 0.518,
+    "zone": "ombra"
+   }
   },
   {
    "order": 8,
@@ -145,7 +222,18 @@
    "light": 0.0162,
    "shadow": 0.0104,
    "neutral": 0.9734,
-   "phyphoxFile": "assets/data/8.xlsx"
+   "phyphoxFile": "assets/data/8.xlsx",
+   "sunAzimuth": 215.1,
+   "sunElevation": 33.8,
+   "imageBW": "assets/images/bianco_nero/8.jpg",
+   "thrLow": 0.1059,
+   "thrHigh": 0.8667,
+   "lightRank": 20,
+   "zoomFocus": {
+    "x": 0.292,
+    "y": 0.517,
+    "zone": "luce"
+   }
   },
   {
    "order": 9,
@@ -162,7 +250,18 @@
    "light": 0,
    "shadow": 0.0056,
    "neutral": 0.9944,
-   "phyphoxFile": "assets/data/9.xlsx"
+   "phyphoxFile": "assets/data/9.xlsx",
+   "sunAzimuth": 215.7,
+   "sunElevation": 33.5,
+   "imageBW": "assets/images/bianco_nero/9.jpg",
+   "thrLow": 0.0392,
+   "thrHigh": 1.0,
+   "lightRank": 16,
+   "zoomFocus": {
+    "x": 0.424,
+    "y": 0.492,
+    "zone": "ombra"
+   }
   },
   {
    "order": 10,
@@ -179,7 +278,18 @@
    "light": 0,
    "shadow": 0.052,
    "neutral": 0.948,
-   "phyphoxFile": "assets/data/10.xlsx"
+   "phyphoxFile": "assets/data/10.xlsx",
+   "sunAzimuth": 217.8,
+   "sunElevation": 32.7,
+   "imageBW": "assets/images/bianco_nero/10.jpg",
+   "thrLow": 0.0431,
+   "thrHigh": 1.0,
+   "lightRank": 13,
+   "zoomFocus": {
+    "x": 0.646,
+    "y": 0.598,
+    "zone": "ombra"
+   }
   },
   {
    "order": 11,
@@ -196,7 +306,18 @@
    "light": 0.0098,
    "shadow": 0.0287,
    "neutral": 0.9615,
-   "phyphoxFile": "assets/data/11.xlsx"
+   "phyphoxFile": "assets/data/11.xlsx",
+   "sunAzimuth": 220.5,
+   "sunElevation": 31.6,
+   "imageBW": "assets/images/bianco_nero/11.jpg",
+   "thrLow": 0.0902,
+   "thrHigh": 0.8824,
+   "lightRank": 28,
+   "zoomFocus": {
+    "x": 0.641,
+    "y": 0.623,
+    "zone": "ombra"
+   }
   },
   {
    "order": 12,
@@ -213,7 +334,18 @@
    "light": 0.0138,
    "shadow": 0.0549,
    "neutral": 0.9313,
-   "phyphoxFile": "assets/data/12.xlsx"
+   "phyphoxFile": "assets/data/12.xlsx",
+   "sunAzimuth": 221.0,
+   "sunElevation": 31.4,
+   "imageBW": "assets/images/bianco_nero/12.jpg",
+   "thrLow": 0.0941,
+   "thrHigh": 0.9294,
+   "lightRank": 25,
+   "zoomFocus": {
+    "x": 0.677,
+    "y": 0.451,
+    "zone": "luce"
+   }
   },
   {
    "order": 13,
@@ -230,7 +362,18 @@
    "light": 0,
    "shadow": 0.7673,
    "neutral": 0.2327,
-   "phyphoxFile": "assets/data/13.xlsx"
+   "phyphoxFile": "assets/data/13.xlsx",
+   "sunAzimuth": 221.6,
+   "sunElevation": 31.2,
+   "imageBW": "assets/images/bianco_nero/13.jpg",
+   "thrLow": 0.0471,
+   "thrHigh": 1.0,
+   "lightRank": 1,
+   "zoomFocus": {
+    "x": 0.463,
+    "y": 0.457,
+    "zone": "ombra"
+   }
   },
   {
    "order": 14,
@@ -247,7 +390,18 @@
    "light": 0.0848,
    "shadow": 0.0914,
    "neutral": 0.8238,
-   "phyphoxFile": "assets/data/14.xlsx"
+   "phyphoxFile": "assets/data/14.xlsx",
+   "sunAzimuth": 222.1,
+   "sunElevation": 30.9,
+   "imageBW": "assets/images/bianco_nero/IMG_9191.jpg",
+   "thrLow": 0.1255,
+   "thrHigh": 0.7098,
+   "lightRank": 18,
+   "zoomFocus": {
+    "x": 0.534,
+    "y": 0.679,
+    "zone": "luce"
+   }
   },
   {
    "order": 15,
@@ -264,7 +418,18 @@
    "light": 0.0465,
    "shadow": 0.0388,
    "neutral": 0.9147,
-   "phyphoxFile": "assets/data/15.xlsx"
+   "phyphoxFile": "assets/data/15.xlsx",
+   "sunAzimuth": 225.6,
+   "sunElevation": 29.3,
+   "imageBW": "assets/images/bianco_nero/15.jpg",
+   "thrLow": 0.2196,
+   "thrHigh": 0.851,
+   "lightRank": 29,
+   "zoomFocus": {
+    "x": 0.933,
+    "y": 0.559,
+    "zone": "luce"
+   }
   },
   {
    "order": 16,
@@ -281,7 +446,18 @@
    "light": 0.0507,
    "shadow": 0,
    "neutral": 0.9493,
-   "phyphoxFile": "assets/data/16.xlsx"
+   "phyphoxFile": "assets/data/16.xlsx",
+   "sunAzimuth": 225.8,
+   "sunElevation": 29.2,
+   "imageBW": "assets/images/bianco_nero/16.jpg",
+   "thrLow": 0.0,
+   "thrHigh": 0.949,
+   "lightRank": 22,
+   "zoomFocus": {
+    "x": 0.618,
+    "y": 0.531,
+    "zone": "luce"
+   }
   },
   {
    "order": 17,
@@ -298,7 +474,18 @@
    "light": 0,
    "shadow": 0.0007,
    "neutral": 0.9993,
-   "phyphoxFile": "assets/data/17.xlsx"
+   "phyphoxFile": "assets/data/17.xlsx",
+   "sunAzimuth": 226.2,
+   "sunElevation": 29.0,
+   "imageBW": "assets/images/bianco_nero/17.jpg",
+   "thrLow": 0.0392,
+   "thrHigh": 1.0,
+   "lightRank": 15,
+   "zoomFocus": {
+    "x": 0.5,
+    "y": 0.5,
+    "zone": null
+   }
   },
   {
    "order": 18,
@@ -315,7 +502,18 @@
    "light": 0,
    "shadow": 0.0114,
    "neutral": 0.9886,
-   "phyphoxFile": "assets/data/18.xlsx"
+   "phyphoxFile": "assets/data/18.xlsx",
+   "sunAzimuth": 227.4,
+   "sunElevation": 28.4,
+   "imageBW": "assets/images/bianco_nero/18.jpg",
+   "thrLow": 0.0588,
+   "thrHigh": 1.0,
+   "lightRank": 14,
+   "zoomFocus": {
+    "x": 0.5,
+    "y": 0.5,
+    "zone": null
+   }
   },
   {
    "order": 19,
@@ -332,7 +530,18 @@
    "light": 0,
    "shadow": 0.0421,
    "neutral": 0.9579,
-   "phyphoxFile": "assets/data/19.xlsx"
+   "phyphoxFile": "assets/data/19.xlsx",
+   "sunAzimuth": 227.5,
+   "sunElevation": 28.3,
+   "imageBW": "assets/images/bianco_nero/19.jpg",
+   "thrLow": 0.0549,
+   "thrHigh": 1.0,
+   "lightRank": 9,
+   "zoomFocus": {
+    "x": 0.214,
+    "y": 0.136,
+    "zone": "ombra"
+   }
   },
   {
    "order": 20,
@@ -349,7 +558,18 @@
    "light": 0,
    "shadow": 0.0629,
    "neutral": 0.9371,
-   "phyphoxFile": null
+   "phyphoxFile": null,
+   "sunAzimuth": 227.7,
+   "sunElevation": 28.2,
+   "imageBW": "assets/images/bianco_nero/20.jpg",
+   "thrLow": 0.0471,
+   "thrHigh": 1.0,
+   "lightRank": 12,
+   "zoomFocus": {
+    "x": 0.749,
+    "y": 0.526,
+    "zone": "ombra"
+   }
   },
   {
    "order": 21,
@@ -366,7 +586,18 @@
    "light": 0.002,
    "shadow": 0.1746,
    "neutral": 0.8234,
-   "phyphoxFile": "assets/data/20.xlsx"
+   "phyphoxFile": "assets/data/20.xlsx",
+   "sunAzimuth": 228.6,
+   "sunElevation": 27.8,
+   "imageBW": "assets/images/bianco_nero/IMG_9212.jpg",
+   "thrLow": 0.0667,
+   "thrHigh": 0.9059,
+   "lightRank": 6,
+   "zoomFocus": {
+    "x": 0.413,
+    "y": 0.736,
+    "zone": "ombra"
+   }
   },
   {
    "order": 22,
@@ -383,7 +614,18 @@
    "light": 0,
    "shadow": 0.2827,
    "neutral": 0.7173,
-   "phyphoxFile": "assets/data/21.xlsx"
+   "phyphoxFile": "assets/data/21.xlsx",
+   "sunAzimuth": 228.7,
+   "sunElevation": 27.7,
+   "imageBW": "assets/images/bianco_nero/22.jpg",
+   "thrLow": 0.0392,
+   "thrHigh": 1.0,
+   "lightRank": 3,
+   "zoomFocus": {
+    "x": 0.518,
+    "y": 0.935,
+    "zone": "ombra"
+   }
   },
   {
    "order": 23,
@@ -400,7 +642,18 @@
    "light": 0.0015,
    "shadow": 0.3054,
    "neutral": 0.6931,
-   "phyphoxFile": "assets/data/25.xlsx"
+   "phyphoxFile": "assets/data/25.xlsx",
+   "sunAzimuth": 232.0,
+   "sunElevation": 25.9,
+   "imageBW": "assets/images/bianco_nero/23.jpg",
+   "thrLow": 0.0431,
+   "thrHigh": 0.9569,
+   "lightRank": 10,
+   "zoomFocus": {
+    "x": 0.448,
+    "y": 0.146,
+    "zone": "ombra"
+   }
   },
   {
    "order": 24,
@@ -417,7 +670,18 @@
    "light": 0,
    "shadow": 0.2455,
    "neutral": 0.7545,
-   "phyphoxFile": "assets/data/26.xlsx"
+   "phyphoxFile": "assets/data/26.xlsx",
+   "sunAzimuth": 233.5,
+   "sunElevation": 24.9,
+   "imageBW": "assets/images/bianco_nero/24.jpg",
+   "thrLow": 0.0471,
+   "thrHigh": 1.0,
+   "lightRank": 4,
+   "zoomFocus": {
+    "x": 0.655,
+    "y": 0.175,
+    "zone": "ombra"
+   }
   },
   {
    "order": 25,
@@ -434,7 +698,18 @@
    "light": 0.0001,
    "shadow": 0.5179,
    "neutral": 0.482,
-   "phyphoxFile": null
+   "phyphoxFile": null,
+   "sunAzimuth": 235.5,
+   "sunElevation": 23.7,
+   "imageBW": "assets/images/bianco_nero/27.jpg",
+   "thrLow": 0.0431,
+   "thrHigh": 1.0,
+   "lightRank": 5,
+   "zoomFocus": {
+    "x": 0.397,
+    "y": 0.378,
+    "zone": "ombra"
+   }
   },
   {
    "order": 26,
@@ -451,7 +726,18 @@
    "light": 0,
    "shadow": 0.4747,
    "neutral": 0.5253,
-   "phyphoxFile": "assets/data/28.xlsx"
+   "phyphoxFile": "assets/data/28.xlsx",
+   "sunAzimuth": 235.6,
+   "sunElevation": 23.6,
+   "imageBW": "assets/images/bianco_nero/25.jpg",
+   "thrLow": 0.0471,
+   "thrHigh": 1.0,
+   "lightRank": 2,
+   "zoomFocus": {
+    "x": 0.613,
+    "y": 0.262,
+    "zone": "ombra"
+   }
   },
   {
    "order": 27,
@@ -468,7 +754,18 @@
    "light": 0,
    "shadow": 0.0727,
    "neutral": 0.9273,
-   "phyphoxFile": "assets/data/29.xlsx"
+   "phyphoxFile": "assets/data/29.xlsx",
+   "sunAzimuth": 235.7,
+   "sunElevation": 23.6,
+   "imageBW": "assets/images/bianco_nero/26.jpg",
+   "thrLow": 0.0353,
+   "thrHigh": 1.0,
+   "lightRank": 8,
+   "zoomFocus": {
+    "x": 0.277,
+    "y": 0.329,
+    "zone": "ombra"
+   }
   },
   {
    "order": 28,
@@ -485,7 +782,18 @@
    "light": 0.0176,
    "shadow": 0.0017,
    "neutral": 0.9807,
-   "phyphoxFile": null
+   "phyphoxFile": null,
+   "sunAzimuth": 236.7,
+   "sunElevation": 22.9,
+   "imageBW": "assets/images/bianco_nero/28.jpg",
+   "thrLow": 0.0627,
+   "thrHigh": 0.9451,
+   "lightRank": 19,
+   "zoomFocus": {
+    "x": 0.527,
+    "y": 0.285,
+    "zone": "luce"
+   }
   },
   {
    "order": 29,
@@ -502,7 +810,18 @@
    "light": 0,
    "shadow": 0.2172,
    "neutral": 0.7828,
-   "phyphoxFile": null
+   "phyphoxFile": null,
+   "sunAzimuth": 238.7,
+   "sunElevation": 21.6,
+   "imageBW": "assets/images/bianco_nero/29.jpg",
+   "thrLow": 0.0392,
+   "thrHigh": 1.0,
+   "lightRank": 7,
+   "zoomFocus": {
+    "x": 0.166,
+    "y": 0.679,
+    "zone": "ombra"
+   }
   },
   {
    "order": 30,
@@ -519,7 +838,18 @@
    "light": 0,
    "shadow": 0.0746,
    "neutral": 0.9254,
-   "phyphoxFile": "assets/data/32.xlsx"
+   "phyphoxFile": "assets/data/32.xlsx",
+   "sunAzimuth": 238.8,
+   "sunElevation": 21.6,
+   "imageBW": "assets/images/bianco_nero/30.jpg",
+   "thrLow": 0.0353,
+   "thrHigh": 1.0,
+   "lightRank": 11,
+   "zoomFocus": {
+    "x": 0.253,
+    "y": 0.808,
+    "zone": "ombra"
+   }
   }
  ],
  "track": [
@@ -3169,5 +3499,364 @@
    "ele": 2681.6,
    "dist": 4850
   }
- ]
+ ],
+ "sunPath": {
+  "date": "2026-10-02",
+  "lat": 46.52,
+  "lon": 12.01,
+  "step": "10 min",
+  "points": [
+   {
+    "time": "07:20",
+    "az": 95.8,
+    "el": 0.6
+   },
+   {
+    "time": "07:30",
+    "az": 97.7,
+    "el": 2.3
+   },
+   {
+    "time": "07:40",
+    "az": 99.5,
+    "el": 4.0
+   },
+   {
+    "time": "07:50",
+    "az": 101.3,
+    "el": 5.7
+   },
+   {
+    "time": "08:00",
+    "az": 103.2,
+    "el": 7.4
+   },
+   {
+    "time": "08:10",
+    "az": 105.1,
+    "el": 9.0
+   },
+   {
+    "time": "08:20",
+    "az": 107.0,
+    "el": 10.7
+   },
+   {
+    "time": "08:30",
+    "az": 108.9,
+    "el": 12.3
+   },
+   {
+    "time": "08:40",
+    "az": 110.8,
+    "el": 13.9
+   },
+   {
+    "time": "08:50",
+    "az": 112.8,
+    "el": 15.5
+   },
+   {
+    "time": "09:00",
+    "az": 114.8,
+    "el": 17.1
+   },
+   {
+    "time": "09:10",
+    "az": 116.9,
+    "el": 18.6
+   },
+   {
+    "time": "09:20",
+    "az": 119.0,
+    "el": 20.2
+   },
+   {
+    "time": "09:30",
+    "az": 121.2,
+    "el": 21.7
+   },
+   {
+    "time": "09:40",
+    "az": 123.3,
+    "el": 23.1
+   },
+   {
+    "time": "09:50",
+    "az": 125.6,
+    "el": 24.5
+   },
+   {
+    "time": "10:00",
+    "az": 127.9,
+    "el": 25.9
+   },
+   {
+    "time": "10:10",
+    "az": 130.3,
+    "el": 27.2
+   },
+   {
+    "time": "10:20",
+    "az": 132.7,
+    "el": 28.5
+   },
+   {
+    "time": "10:30",
+    "az": 135.2,
+    "el": 29.8
+   },
+   {
+    "time": "10:40",
+    "az": 137.7,
+    "el": 30.9
+   },
+   {
+    "time": "10:50",
+    "az": 140.3,
+    "el": 32.1
+   },
+   {
+    "time": "11:00",
+    "az": 143.0,
+    "el": 33.1
+   },
+   {
+    "time": "11:10",
+    "az": 145.7,
+    "el": 34.1
+   },
+   {
+    "time": "11:20",
+    "az": 148.5,
+    "el": 35.1
+   },
+   {
+    "time": "11:30",
+    "az": 151.4,
+    "el": 35.9
+   },
+   {
+    "time": "11:40",
+    "az": 154.4,
+    "el": 36.7
+   },
+   {
+    "time": "11:50",
+    "az": 157.4,
+    "el": 37.4
+   },
+   {
+    "time": "12:00",
+    "az": 160.4,
+    "el": 38.0
+   },
+   {
+    "time": "12:10",
+    "az": 163.5,
+    "el": 38.6
+   },
+   {
+    "time": "12:20",
+    "az": 166.7,
+    "el": 39.0
+   },
+   {
+    "time": "12:30",
+    "az": 169.9,
+    "el": 39.3
+   },
+   {
+    "time": "12:40",
+    "az": 173.1,
+    "el": 39.6
+   },
+   {
+    "time": "12:50",
+    "az": 176.3,
+    "el": 39.7
+   },
+   {
+    "time": "13:00",
+    "az": 179.6,
+    "el": 39.8
+   },
+   {
+    "time": "13:10",
+    "az": 182.8,
+    "el": 39.8
+   },
+   {
+    "time": "13:20",
+    "az": 186.1,
+    "el": 39.6
+   },
+   {
+    "time": "13:30",
+    "az": 189.3,
+    "el": 39.4
+   },
+   {
+    "time": "13:40",
+    "az": 192.5,
+    "el": 39.1
+   },
+   {
+    "time": "13:50",
+    "az": 195.6,
+    "el": 38.7
+   },
+   {
+    "time": "14:00",
+    "az": 198.7,
+    "el": 38.1
+   },
+   {
+    "time": "14:10",
+    "az": 201.8,
+    "el": 37.5
+   },
+   {
+    "time": "14:20",
+    "az": 204.8,
+    "el": 36.9
+   },
+   {
+    "time": "14:30",
+    "az": 207.8,
+    "el": 36.1
+   },
+   {
+    "time": "14:40",
+    "az": 210.7,
+    "el": 35.2
+   },
+   {
+    "time": "14:50",
+    "az": 213.5,
+    "el": 34.3
+   },
+   {
+    "time": "15:00",
+    "az": 216.3,
+    "el": 33.3
+   },
+   {
+    "time": "15:10",
+    "az": 219.0,
+    "el": 32.3
+   },
+   {
+    "time": "15:20",
+    "az": 221.6,
+    "el": 31.2
+   },
+   {
+    "time": "15:30",
+    "az": 224.1,
+    "el": 30.0
+   },
+   {
+    "time": "15:40",
+    "az": 226.6,
+    "el": 28.8
+   },
+   {
+    "time": "15:50",
+    "az": 229.1,
+    "el": 27.5
+   },
+   {
+    "time": "16:00",
+    "az": 231.4,
+    "el": 26.2
+   },
+   {
+    "time": "16:10",
+    "az": 233.7,
+    "el": 24.8
+   },
+   {
+    "time": "16:20",
+    "az": 236.0,
+    "el": 23.4
+   },
+   {
+    "time": "16:30",
+    "az": 238.2,
+    "el": 22.0
+   },
+   {
+    "time": "16:40",
+    "az": 240.4,
+    "el": 20.5
+   },
+   {
+    "time": "16:50",
+    "az": 242.5,
+    "el": 19.0
+   },
+   {
+    "time": "17:00",
+    "az": 244.5,
+    "el": 17.4
+   },
+   {
+    "time": "17:10",
+    "az": 246.6,
+    "el": 15.8
+   },
+   {
+    "time": "17:20",
+    "az": 248.5,
+    "el": 14.3
+   },
+   {
+    "time": "17:30",
+    "az": 250.5,
+    "el": 12.6
+   },
+   {
+    "time": "17:40",
+    "az": 252.4,
+    "el": 11.0
+   },
+   {
+    "time": "17:50",
+    "az": 254.3,
+    "el": 9.4
+   },
+   {
+    "time": "18:00",
+    "az": 256.2,
+    "el": 7.7
+   },
+   {
+    "time": "18:10",
+    "az": 258.1,
+    "el": 6.0
+   },
+   {
+    "time": "18:20",
+    "az": 259.9,
+    "el": 4.3
+   },
+   {
+    "time": "18:30",
+    "az": 261.7,
+    "el": 2.6
+   },
+   {
+    "time": "18:40",
+    "az": 263.6,
+    "el": 0.9
+   },
+   {
+    "time": "18:50",
+    "az": 265.4,
+    "el": -0.8
+   }
+  ],
+  "note": "Posizione del sole calcolata (algoritmo NOAA). az = azimut in gradi da nord in senso orario, el = elevazione in gradi sull'orizzonte."
+ }
 }

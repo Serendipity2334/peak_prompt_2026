@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Peak Prompt — Edges</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/edges/edges.css" />
+</head>
+<body class="edges-page">
+  <canvas id="c"></canvas>
+
+  <div id="ui">
+    <div class="brand">PEAK PROMPT · EDGES</div>
+    <div class="hud" id="hud">
+      <span id="hud-idx">01 / 66</span>
+      <span id="hud-hint">scroll · foto + video · buio → luce</span>
+    </div>
+    <a class="back" href="/" target="_self">percorso</a>
+  </div>
+
+  <div id="boot">caricamento edges…</div>
+
+  <script type="module" src="/src/edges/main.js"></script>
+</body>
+</html>

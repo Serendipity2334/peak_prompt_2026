@@ -10,27 +10,24 @@
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
-  <!-- Canvas 3D fisso; lo scroll avviene sulla pagina alta -->
   <canvas id="c"></canvas>
 
-  <!-- Spazio di scroll: il progresso p guida la camera -->
-  <div id="scroll-space" aria-hidden="true"></div>
+  <!-- Scroll: intro + 30 foto + vetta -->
+  <div id="scroll-root">
+    <section class="panel" id="intro" data-panel="intro"></section>
+    <!-- slot foto: riempiti da JS in ordine lightRank -->
+    <div id="photo-panels"></div>
+    <section class="panel" id="summit" data-panel="summit"></section>
+  </div>
 
   <div id="ui">
-    <header class="brand">
-      <div class="title">PEAK PROMPT</div>
-      <div class="sub">Passo Falzarego → Lagazuoi · 2 ottobre 2026</div>
-    </header>
-
-    <div class="hud" id="hud">
-      <div>POS <span id="hud-pos">—</span></div>
-      <div>P <span id="hud-p">0.000</span></div>
-      <div>QUOTA <span id="hud-ele">—</span></div>
-      <div>ORA <span id="hud-time">—</span></div>
+    <div class="center-copy" id="center-copy">
+      <h1 id="center-title">PEAK PROMPT</h1>
+      <button type="button" id="cta">Scorri verso la luce ↓</button>
     </div>
   </div>
 
-  <div id="boot">caricamento percorso…</div>
+  <div id="boot">caricamento…</div>
 
   <script type="module" src="/src/main.js"></script>
 </body>

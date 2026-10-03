@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Peak Prompt — Stack</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/stack/stack.css" />
+</head>
+<body class="stack-page">
+  <canvas id="c"></canvas>
+
+  <div id="ui">
+    <div class="brand">PEAK PROMPT · STACK</div>
+    <div class="hud" id="hud">
+      <span id="hud-idx">01 / 32</span>
+      <span id="hud-hint">scroll · buio → luce</span>
+    </div>
+    <a class="back" href="/" target="_self">percorso</a>
+  </div>
+
+  <div class="metrics" id="metrics" aria-live="polite">
+    <div class="metric metric-buio">
+      <span class="metric-label">BUIO</span>
+      <span class="metric-value" id="hud-buio">100,0%</span>
+    </div>
+    <div class="metric metric-luce">
+      <span class="metric-label">LUCE</span>
+      <span class="metric-value" id="hud-luce">0,0%</span>
+    </div>
+  </div>
+
+  <div class="color-control" id="color-control">
+    <label for="color-slider">
+      <span>BLU</span>
+      <span id="color-pct">0%</span>
+      <span>ROSSO</span>
+    </label>
+    <input
+      id="color-slider"
+      type="range"
+      min="0"
+      max="100"
+      value="0"
+      step="1"
+      aria-label="Gradiente blu–rosso"
+    />
+  </div>
+
+  <div id="boot">caricamento stack…</div>
+
+  <script type="module" src="/src/stack/main.js"></script>
+</body>
+</html>

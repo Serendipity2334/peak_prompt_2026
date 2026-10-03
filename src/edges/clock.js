@@ -110,6 +110,7 @@ function makeEdgeMaterial(tex, item) {
       uShadow: { value: Number(item.shadow) || 0 },
       uCover: { value: 0 },
       uOpacity: { value: 1 },
+      uGrain: { value: 0 },
       uResolution: { value: new THREE.Vector2(1, 1) },
       uImageSize: { value: new THREE.Vector2(w, h) }
     },

@@ -77,8 +77,30 @@ function makeThumb(ffmpegPath, input, output, { seek = false } = {}) {
   return runFfmpeg(ffmpegPath, args);
 }
 
+function loadPrevVideoStats() {
+  const file = path.join(cacheVideos, 'manifest.json');
+  if (!fs.existsSync(file)) return new Map();
+  try {
+    const prev = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return new Map(
+      (Array.isArray(prev) ? prev : []).map((v) => [
+        v.id,
+        {
+          light: v.light,
+          shadow: v.shadow,
+          neutral: v.neutral,
+          luma: v.luma
+        }
+      ])
+    );
+  } catch {
+    return new Map();
+  }
+}
+
 function buildManifest() {
   ensureDir(cacheVideos);
+  const prev = loadPrevVideoStats();
   const items = listMpg()
     .map((file) => {
       const id = path.basename(file, path.extname(file));
@@ -90,6 +112,7 @@ function buildManifest() {
       const time = `${hh}:${mm}:${ss}`;
       const sortKey =
         birth.getHours() * 3600 + birth.getMinutes() * 60 + birth.getSeconds();
+      const kept = prev.get(id) || {};
       return {
         id,
         kind: 'video',
@@ -98,8 +121,10 @@ function buildManifest() {
         thumb: `/cache/thumbs/video-${id}.jpg`,
         time,
         sortKey,
-        light: 0,
-        shadow: 0
+        light: kept.light ?? 0,
+        shadow: kept.shadow ?? 0,
+        ...(kept.neutral != null ? { neutral: kept.neutral } : {}),
+        ...(kept.luma != null ? { luma: kept.luma } : {})
       };
     })
     .sort((a, b) => a.sortKey - b.sortKey || a.id.localeCompare(b.id));
@@ -109,6 +134,17 @@ function buildManifest() {
     JSON.stringify(items, null, 2)
   );
   return items;
+}
+
+function recomputeVideoLight() {
+  const py = path.join(root, '.venv', 'bin', 'python');
+  const script = path.join(root, 'scripts', 'recompute_light.py');
+  if (!fs.existsSync(py) || !fs.existsSync(script)) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const child = spawn(py, [script, 'videos'], { stdio: 'inherit', cwd: root });
+    child.on('close', (code) => resolve(code === 0));
+    child.on('error', () => resolve(false));
+  });
 }
 
 async function prepareThumbs(ffmpegPath) {
@@ -178,6 +214,8 @@ async function prepareMedia() {
   const manifest = buildManifest();
   console.log(`[videos] manifest: ${manifest.length} clip`);
   await prepareThumbs(ffmpegPath);
+  const ok = await recomputeVideoLight();
+  if (ok) console.log('[videos] light/shadow ricalcolati dai thumb');
 }
 
 function sendFile(res, file, type) {

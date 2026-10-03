@@ -1,6 +1,7 @@
 # Dependencies & tooling
 node_modules/
 .tools/
+.venv/
 dist/
 
 # OS / editor

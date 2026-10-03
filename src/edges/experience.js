@@ -5,6 +5,132 @@ import edgeFrag from './edge.frag.js';
 const MAX_TEX_W = 960;
 const Z_GAP = 0.02;
 
+/** Titolo: stesso erase-luma della prima immagine; texture fissa (niente ripaint → niente drift). */
+const titleFollowFrag = /* glsl */ `
+uniform sampler2D uTitle;
+uniform sampler2D uMap;
+uniform sampler2D uMapHi;
+uniform float uDetailMix;
+uniform float uCutoff;
+uniform vec2 uResolution;
+uniform vec2 uImageSize;
+varying vec2 vUv;
+
+vec2 coverUV(vec2 uv, vec2 res, vec2 img) {
+  float sA = res.x / max(res.y, 1.0);
+  float iA = img.x / max(img.y, 1.0);
+  vec2 outUv = uv;
+  if (sA > iA) {
+    outUv.y = 0.5 + (uv.y - 0.5) * (iA / sA);
+  } else {
+    outUv.x = 0.5 + (uv.x - 0.5) * (sA / iA);
+  }
+  return outUv;
+}
+
+float photoLuma(vec2 puv) {
+  vec3 lo = texture2D(uMap, puv).rgb;
+  vec3 hi = texture2D(uMapHi, puv).rgb;
+  vec3 photo = mix(lo, hi, clamp(uDetailMix, 0.0, 1.0));
+  return dot(photo, vec3(0.2126, 0.7152, 0.0722));
+}
+
+void main() {
+  vec2 puv = coverUV(vUv, uResolution, uImageSize);
+  if (puv.x < 0.0 || puv.x > 1.0 || puv.y < 0.0 || puv.y > 1.0) discard;
+
+  // max luma nel vicinato: evita che i bordi dei glifi spariscano prima (= “shrink”)
+  vec2 texel = 1.0 / max(uImageSize, vec2(1.0));
+  float L = 0.0;
+  for (int j = -2; j <= 2; j++) {
+    for (int i = -2; i <= 2; i++) {
+      vec2 q = puv + vec2(float(i), float(j)) * texel * 1.5;
+      L = max(L, photoLuma(clamp(q, vec2(0.0), vec2(1.0))));
+    }
+  }
+  if (L < (1.0 - uCutoff)) discard;
+
+  vec4 t = texture2D(uTitle, vUv);
+  if (t.a < 0.05) discard;
+  vec3 photo = mix(texture2D(uMap, puv).rgb, texture2D(uMapHi, puv).rgb, clamp(uDetailMix, 0.0, 1.0));
+  vec3 diff = abs(t.rgb - photo);
+  gl_FragColor = vec4(diff, t.a);
+}
+`;
+
+const TITLE_WORDS = ['reach', 'the', 'light', 'at', 'the', 'peak'];
+
+/** Sfondo morph B/N + noise. uLift 0 = landing scura, 1 = finale chiaro. */
+const morphBgFrag = /* glsl */ `
+uniform sampler2D uTop;
+uniform sampler2D uBot;
+uniform float uCutoff;
+uniform float uTime;
+uniform float uDim;
+uniform float uLift;
+uniform vec2 uResolution;
+uniform vec2 uTopSize;
+uniform vec2 uBotSize;
+varying vec2 vUv;
+
+vec2 coverUV(vec2 uv, vec2 res, vec2 img) {
+  float sA = res.x / max(res.y, 1.0);
+  float iA = img.x / max(img.y, 1.0);
+  vec2 outUv = uv;
+  if (sA > iA) {
+    outUv.y = 0.5 + (uv.y - 0.5) * (iA / sA);
+  } else {
+    outUv.x = 0.5 + (uv.x - 0.5) * (sA / iA);
+  }
+  return outUv;
+}
+
+float sampleLuma(sampler2D map, vec2 uv, vec2 imgSize) {
+  vec2 cuv = coverUV(uv, uResolution, imgSize);
+  if (cuv.x < 0.0 || cuv.x > 1.0 || cuv.y < 0.0 || cuv.y > 1.0) {
+    return 0.12;
+  }
+  vec3 c = texture2D(map, cuv).rgb;
+  return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+float grain(vec2 uv) {
+  // grana fine e statica (niente flicker)
+  return hash(floor(uv * uResolution * 1.6)) * 2.0 - 1.0;
+}
+
+void main() {
+  vec2 drift = vec2(
+    sin(uTime * 0.11) * 0.018,
+    cos(uTime * 0.085 + 1.2) * 0.014
+  );
+  vec2 uvTop = vUv + drift;
+  // offset diverso sul bot → il passaggio si legge meglio
+  vec2 uvBot = vUv - drift * 0.7 + vec2(0.03, -0.02);
+
+  float Lt = sampleLuma(uTop, uvTop, uTopSize);
+  float Lb = sampleLuma(uBot, uvBot, uBotSize);
+
+  // erase netto tipo sequenza (soglia stretta)
+  float edge = step(1.0 - uCutoff, Lt);
+  float L = mix(Lb, Lt, edge);
+
+  // invertito; uLift porta la gamma dal molto scuro al quasi bianco
+  L = 1.0 - clamp(L, 0.0, 1.0);
+  float lo = mix(0.01, 0.90, uLift);
+  float hi = mix(0.14, 0.995, uLift);
+  L = mix(lo, hi, pow(L, mix(1.2, 0.85, uLift)));
+  L += grain(vUv) * mix(0.045, 0.04, uLift);
+  float dim = mix(uDim, 1.0, uLift);
+  L = clamp(L * dim, 0.0, 1.0);
+  gl_FragColor = vec4(vec3(L), 1.0);
+}
+`;
+
 function easeInOut(t) {
   return t * t * (3 - 2 * t);
 }
@@ -65,14 +191,11 @@ function formatClockTime(item) {
     const sec = Math.max(0, Math.floor(Number(item.sortKey)));
     const h = Math.floor(sec / 3600) % 24;
     const m = Math.floor((sec % 3600) / 60);
-    const s = sec % 60;
-    return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
+    return `${pad2(h)}:${pad2(m)}`;
   }
   const parts = String(item?.time || '').split(':');
   if (parts.length >= 2) {
-    return parts.length >= 3
-      ? `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}:${parts[2].padStart(2, '0')}`
-      : `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
+    return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
   }
   return '--:--';
 }
@@ -88,7 +211,7 @@ function makeTimeLabel(text) {
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = 'rgba(255,255,255,0.92)';
-  ctx.font = '500 36px "IBM Plex Mono", ui-monospace, monospace';
+  ctx.font = '700 36px "GT Cinetype", "GTCinetype", sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, w / 2, h / 2);
@@ -179,6 +302,17 @@ export function createExperience(canvas) {
   let clockGroup = null;
   /** @type {THREE.Mesh[]} */
   let clockLabels = [];
+  /** @type {THREE.Mesh | null} */
+  let titleMesh = null;
+  /** @type {HTMLCanvasElement | null} */
+  let titleCanvas = null;
+  /** @type {THREE.Mesh | null} */
+  let morphBg = null;
+  /** @type {THREE.Texture[]} */
+  let morphTexs = [];
+  let morphIndex = 0;
+  let morphT = 0;
+  let morphLastTs = 0;
   /** @type {Array<Record<string, unknown>>} */
   let items = [];
   /** @type {Map<number, Promise<void>>} */
@@ -263,6 +397,7 @@ export function createExperience(canvas) {
         uShadow: { value: Number(item.shadow) || 0 },
         uCover: { value: 0 },
         uOpacity: { value: 1 },
+        uGrain: { value: 0 },
         uResolution: {
           value: new THREE.Vector2(window.innerWidth, window.innerHeight)
         },
@@ -405,7 +540,9 @@ export function createExperience(canvas) {
       renderer.render(scene, camera);
     }
 
-    buildClockFace(items);
+    await buildClockFace(items);
+    await buildTitleOverlay();
+    await buildMorphBg(items);
 
     // fine sequenza → sfondo bianco (non in raggiera)
     const endMesh = makeWhiteEndMesh(n);
@@ -459,9 +596,16 @@ export function createExperience(canvas) {
     if (mode === 'sequence') {
       layoutSequence(fullW, fullH);
       setClockVisible(false);
+      layoutTitleOverlay();
+      layoutMorphBg();
+      // visibilità gestita da tickMorphBg (off in mezzo, on al finale chiaro)
+      if (!isEndReveal()) setMorphBgVisible(false);
       updateDetailMix();
       return;
     }
+
+    if (titleMesh) titleMesh.visible = false;
+    layoutMorphBg();
 
     // prefetch quando si inizia a raggruppare
     if (intro > 0.15) {
@@ -511,6 +655,8 @@ export function createExperience(canvas) {
         mesh.material.uniforms.uCover.value = 0;
         mesh.material.uniforms.uOpacity.value = 1;
         mesh.material.uniforms.uCutoff.value = 1;
+        // noise come landing; entra con lo zoom verso sequenza
+        mesh.material.uniforms.uGrain.value = 0.045 * m;
         mesh.renderOrder = n + 20;
         mesh.visible = true;
       } else {
@@ -531,6 +677,7 @@ export function createExperience(canvas) {
         mesh.material.uniforms.uCover.value = 0;
         mesh.material.uniforms.uOpacity.value = hideBehind ? 0 : 1;
         mesh.material.uniforms.uCutoff.value = 1;
+        mesh.material.uniforms.uGrain.value = 0;
         mesh.renderOrder = n - i;
         mesh.visible = !hideBehind;
       }
@@ -559,10 +706,17 @@ export function createExperience(canvas) {
   /**
    * Orari per i 10 spicchi (niente assi / pallini).
    */
-  function buildClockFace(itemList) {
+  async function buildClockFace(itemList) {
     disposeClock();
     const list = itemList || [];
     if (!list.length) return;
+
+    try {
+      await document.fonts.load('700 36px "GT Cinetype"');
+      await document.fonts.ready;
+    } catch {
+      /* fallback: canvas userà il sans di sistema */
+    }
 
     clockGroup = new THREE.Group();
     clockGroup.renderOrder = -20;
@@ -593,7 +747,10 @@ export function createExperience(canvas) {
     if (!clockGroup) return;
     const short = Math.min(halfW, halfH);
     const labelW = short * 0.28;
-    const rLabel = short * 0.96;
+    // appena fuori dalla raggiera delle tile
+    const sample = sizeWithAspect(short * 0.25, 1.2);
+    const tileOut = Math.hypot(sample.w, sample.h) * 0.5;
+    const rLabel = fitRadius() + tileOut + short * 0.055;
 
     for (const label of clockLabels) {
       const a = label.userData.angle;
@@ -604,7 +761,7 @@ export function createExperience(canvas) {
         (lw * 0.5) * Math.abs(Math.cos(a)) +
         (lh * 0.5) * Math.abs(Math.sin(a));
       const maxR = Math.min(halfW - lw * 0.52, halfH - lh * 0.52);
-      const r = Math.min(rLabel + labelIn * 0.15, maxR);
+      const r = Math.min(rLabel + labelIn * 0.05, maxR);
       label.position.set(Math.cos(a) * r, Math.sin(a) * r, 0.08);
       label.scale.set(lw, lh, 1);
       label.rotation.z = 0;
@@ -631,6 +788,296 @@ export function createExperience(canvas) {
     clockGroup = null;
   }
 
+  function paintTitleCanvas() {
+    if (!titleCanvas) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const cssW = window.innerWidth;
+    const cssH = window.innerHeight;
+    const w = Math.max(2, Math.round(cssW * dpr));
+    const h = Math.max(2, Math.round(cssH * dpr));
+    if (titleCanvas.width !== w || titleCanvas.height !== h) {
+      titleCanvas.width = w;
+      titleCanvas.height = h;
+    }
+    const ctx = titleCanvas.getContext('2d');
+    // scala in CSS px (come il DOM): altrimenti su retina il font resta in px CSS
+    // mentre le coordinate sono in device px → testo ~1/dpr più piccolo
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+
+    // copia pixel-perfect dal DOM → stessa size della landing
+    const spans = document.querySelectorAll('#peak-title .peak-line > span');
+    const line = document.querySelector('#peak-title .peak-line');
+    if (spans.length && line) {
+      const cs = getComputedStyle(line);
+      ctx.font = cs.font || `300 ${cs.fontSize} "GT Cinetype", sans-serif`;
+      spans.forEach((span) => {
+        const r = span.getBoundingClientRect();
+        ctx.fillText(span.textContent || '', r.left, r.top + r.height * 0.5);
+      });
+      return;
+    }
+
+    // fallback se il DOM non è pronto (sempre in CSS px)
+    const fontPx = Math.min(cssW * 0.072, cssH * 0.12);
+    ctx.font = `300 ${fontPx}px "GT Cinetype", "GTCinetype", sans-serif`;
+    const pad = cssW * 0.025;
+    const widths = TITLE_WORDS.map((word) => ctx.measureText(word).width);
+    const total = widths.reduce((a, b) => a + b, 0);
+    const gap = TITLE_WORDS.length > 1 ? (cssW - pad * 2 - total) / (TITLE_WORDS.length - 1) : 0;
+    let x = pad;
+    const y = cssH * 0.5;
+    for (let i = 0; i < TITLE_WORDS.length; i++) {
+      ctx.fillText(TITLE_WORDS[i], x, y);
+      x += widths[i] + gap;
+    }
+  }
+
+  async function buildTitleOverlay() {
+    disposeTitleOverlay();
+    try {
+      await document.fonts.load('300 48px "GT Cinetype"');
+      await document.fonts.ready;
+    } catch {
+      /* ignore */
+    }
+
+    titleCanvas = document.createElement('canvas');
+    paintTitleCanvas();
+    const tex = prepTex(new THREE.CanvasTexture(titleCanvas));
+    tex.premultiplyAlpha = false;
+
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: edgeVert,
+      fragmentShader: titleFollowFrag,
+      uniforms: {
+        uTitle: { value: tex },
+        uMap: { value: tex },
+        uMapHi: { value: tex },
+        uDetailMix: { value: 0 },
+        uCutoff: { value: 1 },
+        uResolution: {
+          value: new THREE.Vector2(window.innerWidth, window.innerHeight)
+        },
+        uImageSize: { value: new THREE.Vector2(1, 1) }
+      },
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false
+    });
+
+    titleMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+    titleMesh.frustumCulled = false;
+    titleMesh.renderOrder = 200;
+    titleMesh.visible = false;
+    scene.add(titleMesh);
+  }
+
+  function layoutTitleOverlay() {
+    if (!titleMesh || !meshes[0]) {
+      if (titleMesh) titleMesh.visible = false;
+      return;
+    }
+    const mesh0 = meshes[0];
+    const { w: fullW, h: fullH } = viewSize();
+    // transform fisso a viewport — non dipende dal cutoff
+    titleMesh.position.set(0, 0, 0.03);
+    titleMesh.scale.set(fullW, fullH, 1);
+    titleMesh.rotation.set(0, 0, 0);
+
+    const src = mesh0.material.uniforms;
+    const mat = titleMesh.material;
+    mat.uniforms.uMap.value = src.uMap.value;
+    mat.uniforms.uMapHi.value = src.uMapHi.value;
+    mat.uniforms.uDetailMix.value = src.uDetailMix.value;
+    mat.uniforms.uCutoff.value = src.uCutoff.value;
+    mat.uniforms.uImageSize.value.copy(src.uImageSize.value);
+    mat.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
+
+    const cutoff = src.uCutoff.value;
+    titleMesh.visible =
+      mode === 'sequence' && mesh0.visible && cutoff > 0.001;
+  }
+
+  /** Congela il titolo sulla posizione DOM corrente (chiamare prima di nascondere il DOM). */
+  function captureTitleFromDom() {
+    if (!titleCanvas || !titleMesh) return;
+    paintTitleCanvas();
+    const tex = titleMesh.material.uniforms.uTitle.value;
+    if (tex) tex.needsUpdate = true;
+  }
+
+  function disposeTitleOverlay() {
+    if (titleMesh) {
+      scene.remove(titleMesh);
+      titleMesh.material.uniforms.uTitle.value?.dispose();
+      titleMesh.material.dispose();
+      titleMesh.geometry.dispose();
+    }
+    titleMesh = null;
+    titleCanvas = null;
+  }
+
+  function morphTexSize(tex) {
+    const img = tex?.image;
+    return {
+      w: img?.videoWidth || img?.width || 1,
+      h: img?.videoHeight || img?.height || 1
+    };
+  }
+
+  function setMorphPair(index) {
+    if (!morphBg || morphTexs.length < 2) return;
+    const n = morphTexs.length;
+    const i = ((index % n) + n) % n;
+    const j = (i + 1) % n;
+    morphIndex = i;
+    const mat = morphBg.material;
+    mat.uniforms.uTop.value = morphTexs[i];
+    mat.uniforms.uBot.value = morphTexs[j];
+    const a = morphTexSize(morphTexs[i]);
+    const b = morphTexSize(morphTexs[j]);
+    mat.uniforms.uTopSize.value.set(a.w, a.h);
+    mat.uniforms.uBotSize.value.set(b.w, b.h);
+    mat.uniforms.uCutoff.value = 1;
+  }
+
+  async function buildMorphBg() {
+    disposeMorphBg();
+    // riusa thumbs della raggiera, campionate lungo la sequenza
+    const sources = [];
+    const n = meshes.length;
+    const target = Math.min(14, Math.max(4, Math.floor(n / 3)));
+    const step = Math.max(1, Math.floor(n / target));
+    for (let i = 0; i < n; i += step) {
+      const mesh = meshes[i];
+      if (!mesh || mesh.userData.isEndSlide) continue;
+      const tex = mesh.userData.thumbTex;
+      if (tex) sources.push(tex);
+    }
+    if (sources.length < 2) return;
+
+    morphTexs = sources;
+    morphIndex = 0;
+    morphT = 0;
+    morphLastTs = performance.now();
+
+    const a = morphTexSize(morphTexs[0]);
+    const b = morphTexSize(morphTexs[1]);
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: edgeVert,
+      fragmentShader: morphBgFrag,
+      uniforms: {
+        uTop: { value: morphTexs[0] },
+        uBot: { value: morphTexs[1] },
+        uCutoff: { value: 1 },
+        uTime: { value: 0 },
+        uDim: { value: 0.85 },
+        uLift: { value: 0 },
+        uResolution: {
+          value: new THREE.Vector2(window.innerWidth, window.innerHeight)
+        },
+        uTopSize: { value: new THREE.Vector2(a.w, a.h) },
+        uBotSize: { value: new THREE.Vector2(b.w, b.h) }
+      },
+      transparent: false,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false
+    });
+
+    morphBg = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+    morphBg.frustumCulled = false;
+    morphBg.renderOrder = -50;
+    morphBg.position.set(0, 0, -8);
+    scene.add(morphBg);
+    layoutMorphBg();
+  }
+
+  function setMorphBgVisible(visible) {
+    if (morphBg) morphBg.visible = Boolean(visible);
+  }
+
+  function layoutMorphBg() {
+    if (!morphBg) return;
+    const { w, h } = viewSize();
+    morphBg.scale.set(w * 1.18, h * 1.18, 1);
+    morphBg.position.set(0, 0, -8);
+    morphBg.material.uniforms.uResolution.value.set(
+      window.innerWidth,
+      window.innerHeight
+    );
+  }
+
+  /** Fine sequenza: ultima slide (o erase verso di essa). */
+  function isEndReveal() {
+    if (mode !== 'sequence') return false;
+    const n = meshes.length;
+    if (n < 2) return false;
+    return seq >= n - 2 - 1e-4;
+  }
+
+  /** Avanza morph B/N + drift; landing scura, finale chiaro. */
+  function tickMorphBg(now = performance.now()) {
+    if (!morphBg || morphTexs.length < 2) return;
+
+    const endReveal = isEndReveal();
+    if (mode !== 'intro' && !endReveal) {
+      morphBg.visible = false;
+      morphBg.material.uniforms.uLift.value = 0;
+      morphLastTs = now;
+      return;
+    }
+
+    const dt = Math.min(0.05, Math.max(0, (now - morphLastTs) / 1000));
+    morphLastTs = now;
+
+    if (endReveal) {
+      morphBg.visible = true;
+      morphBg.material.uniforms.uLift.value = 1;
+      morphBg.material.uniforms.uDim.value = 1;
+    } else {
+      const g = easeInOut(Math.min(Math.max(intro, 0), 1));
+      const m = easeInOut(Math.min(Math.max(intro - 1, 0), 1));
+      const fade = Math.max(0, 1 - g * 0.65 - m);
+      morphBg.visible = fade > 0.02;
+      morphBg.material.uniforms.uLift.value = 0;
+      morphBg.material.uniforms.uDim.value = 0.75 * fade;
+      if (!morphBg.visible) return;
+    }
+
+    morphBg.material.uniforms.uTime.value = now * 0.001;
+
+    // passaggio più veloce e leggibile (~2.4s)
+    morphT += dt / 2.4;
+    if (morphT >= 1) {
+      morphT -= 1;
+      setMorphPair(morphIndex + 1);
+    }
+    // hold breve poi erase deciso
+    const t = Math.min(morphT, 1);
+    const erase = t < 0.12 ? 0 : (t - 0.12) / 0.88;
+    morphBg.material.uniforms.uCutoff.value = 1 - easeInOut(erase);
+  }
+
+  function disposeMorphBg() {
+    if (morphBg) {
+      scene.remove(morphBg);
+      morphBg.material.dispose();
+      morphBg.geometry.dispose();
+    }
+    morphBg = null;
+    // texture condivise con le tile — non dispose qui
+    morphTexs = [];
+    morphIndex = 0;
+    morphT = 0;
+    morphLastTs = 0;
+  }
+
   function layoutSequence(fullW, fullH) {
     const n = meshes.length;
     const max = Math.max(n - 1, 0);
@@ -654,11 +1101,13 @@ export function createExperience(canvas) {
       mesh.rotation.z = 0;
       mesh.material.uniforms.uCover.value = 0;
       mesh.material.uniforms.uOpacity.value = 1;
+      // stessa grana statica della landing
+      mesh.material.uniforms.uGrain.value = isEnd ? 0 : 0.045;
       mesh.renderOrder = n - i;
 
       if (i === n - 1) {
-        // base bianca: sempre sotto, piena
-        mesh.visible = true;
+        // sostituita dallo stesso morph della landing (gamma chiara)
+        mesh.visible = false;
         mesh.material.uniforms.uCutoff.value = 1;
         continue;
       }
@@ -673,6 +1122,7 @@ export function createExperience(canvas) {
         mesh.material.uniforms.uCutoff.value = 1;
       }
     }
+    layoutTitleOverlay();
     syncVideos();
   }
 
@@ -725,6 +1175,9 @@ export function createExperience(canvas) {
     // garantisci full sul primo prima del cut (crossfade già in corso)
     await ensureFull(0);
     if (meshes[0]) setDetail(meshes[0], 1);
+
+    // foto del titolo dal DOM ancora visibile → posizione bloccata per tutta la sequenza
+    captureTitleFromDom();
 
     mode = 'sequence';
     seq = 0;
@@ -796,16 +1249,31 @@ export function createExperience(canvas) {
     for (const mesh of meshes) {
       mesh.material.uniforms.uResolution.value.copy(res);
     }
+    if (morphBg) {
+      morphBg.material.uniforms.uResolution.value.copy(res);
+    }
+    if (titleCanvas && titleMesh) {
+      captureTitleFromDom();
+    }
     layout();
   }
 
   function needsIdleMotion() {
-    return mode === 'intro' && intro < 1.85;
+    // float tile + morph sfondo in landing / finale chiaro
+    return (
+      (mode === 'intro' && intro < 1.85) ||
+      isEndReveal()
+    );
   }
 
   function render() {
-    if (mode === 'intro') layout();
-    else updateDetailMix();
+    if (mode === 'intro') {
+      layout();
+      tickMorphBg(performance.now());
+    } else {
+      updateDetailMix();
+      if (isEndReveal()) tickMorphBg(performance.now());
+    }
     if (mode === 'sequence' || intro > 1.3) {
       for (const mesh of meshes) {
         if (mesh.userData.video && mesh.visible && mesh.userData.detail > 0.2) {
@@ -849,6 +1317,8 @@ export function createExperience(canvas) {
     }
     meshes = [];
     disposeClock();
+    disposeTitleOverlay();
+    disposeMorphBg();
     fullJobs.clear();
   }
 
@@ -871,6 +1341,12 @@ export function createExperience(canvas) {
     getItem,
     hasActiveVideo,
     needsIdleMotion,
+    /** Cutoff erase della prima immagine (1=piena, 0=sparita). */
+    getFirstCutoff: () => {
+      if (mode !== 'sequence' || !meshes[0]) return mode === 'intro' ? 1 : 0;
+      return meshes[0].material.uniforms.uCutoff.value;
+    },
+    captureTitleFromDom,
     get count() {
       return items.length;
     },

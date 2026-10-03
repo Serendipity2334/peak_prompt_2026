@@ -4,6 +4,30 @@
   box-sizing: border-box;
 }
 
+@font-face {
+  font-family: 'GT Cinetype';
+  src:
+    local('GT Cinetype Light'),
+    local('GTCinetype-Light'),
+    local('GT-Cinetype-Light-Trial'),
+    url('/assets/fonts/GT-Cinetype-Light.otf') format('opentype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'GT Cinetype';
+  src:
+    local('GT Cinetype Bold'),
+    local('GTCinetype-Bold'),
+    local('GT-Cinetype-Bold-Trial'),
+    url('/assets/fonts/GT-Cinetype-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 html,
 body.edges-page {
   margin: 0;
@@ -23,6 +47,107 @@ body.edges-page {
   height: 100%;
   display: block;
   touch-action: none;
+}
+
+#meta-date,
+#meta-place {
+  position: fixed;
+  top: 1.25rem;
+  z-index: 10; /* sempre sopra canvas + titolo */
+  pointer-events: none;
+  color: #fff;
+  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  white-space: nowrap;
+  mix-blend-mode: difference;
+  /* opacità guidata da JS (stesso fade degli orari) */
+  opacity: 1;
+}
+
+#meta-date {
+  left: 2.5vw; /* allineato alla R di reach */
+}
+
+#meta-place {
+  right: 2.5vw; /* allineato alla k di peak */
+  text-align: right;
+}
+
+#hud-ele,
+#hud-light {
+  position: fixed;
+  top: 50%;
+  z-index: 10;
+  pointer-events: none;
+  color: #fff;
+  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  line-height: 1.2;
+  white-space: nowrap;
+  mix-blend-mode: difference;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-50%);
+}
+
+#hud-ele {
+  left: 2.5vw;
+}
+
+#hud-light {
+  right: 2.5vw;
+  text-align: right;
+}
+
+#peak-title {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  pointer-events: none;
+  mix-blend-mode: difference;
+  opacity: 1;
+  visibility: visible;
+}
+
+#peak-title .peak-line {
+  box-sizing: border-box;
+  width: 100vw;
+  max-width: 100vw;
+  margin: 0;
+  padding: 0 2.5vw;
+  color: #fff;
+  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
+  font-weight: 300;
+  font-size: min(7.2vw, 12vh);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  text-transform: lowercase;
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  white-space: nowrap;
+}
+
+#peak-title .peak-line span {
+  flex: 0 0 auto;
+}
+
+#peak-title .peak-line span:first-child {
+  text-align: left;
+}
+
+#peak-title .peak-line span:last-child {
+  text-align: right;
 }
 
 #ui {

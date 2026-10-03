@@ -1,6 +1,7 @@
 /**
  * B/N + Sobel blu/rosso.
  * uMap = thumb, uMapHi = full; uDetailMix 0→1 blend senza stacco.
+ * uGrain: stessa grana fine statica della landing (0 = off).
  */
 export default /* glsl */ `
 uniform sampler2D uMap;
@@ -11,6 +12,7 @@ uniform float uLight;
 uniform float uShadow;
 uniform float uCover;
 uniform float uOpacity;
+uniform float uGrain;
 uniform vec2 uResolution;
 uniform vec2 uImageSize;
 varying vec2 vUv;
@@ -38,6 +40,15 @@ vec3 sampleMix(vec2 uv) {
 
 float lumaAt(vec2 uv) {
   return dot(sampleMix(uv), vec3(0.2126, 0.7152, 0.0722));
+}
+
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+// grana fine e statica (come morphBgFrag della landing)
+float grain(vec2 uv) {
+  return hash(floor(uv * uResolution * 1.6)) * 2.0 - 1.0;
 }
 
 void main() {
@@ -74,6 +85,8 @@ void main() {
 
   vec3 bw = vec3(L);
   vec3 color = mix(bw, grade, edge);
+  color += grain(vUv) * uGrain;
+  color = clamp(color, 0.0, 1.0);
 
   gl_FragColor = vec4(color, clamp(uOpacity, 0.0, 1.0));
 }

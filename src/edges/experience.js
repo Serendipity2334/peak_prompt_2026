@@ -5,6 +5,135 @@ import edgeFrag from './edge.frag.js';
 const MAX_TEX_W = 960;
 const Z_GAP = 0.02;
 
+/**
+ * Worth-it finale: stesso extract di keep-going, ma testo bianco pieno
+ * (niente difference / mix-blend).
+ */
+const worthFollowFrag = /* glsl */ `
+uniform sampler2D uTitle;
+uniform sampler2D uMap;
+uniform sampler2D uMapHi;
+uniform sampler2D uPrevMap;
+uniform sampler2D uPrevMapHi;
+uniform float uDetailMix;
+uniform float uPrevDetail;
+uniform float uCutoff;
+uniform float uPrevCutoff;
+uniform float uUsePrev;
+uniform vec2 uResolution;
+uniform vec2 uImageSize;
+uniform vec2 uPrevSize;
+varying vec2 vUv;
+
+vec2 coverUV(vec2 uv, vec2 res, vec2 img) {
+  float sA = res.x / max(res.y, 1.0);
+  float iA = img.x / max(img.y, 1.0);
+  vec2 outUv = uv;
+  if (sA > iA) {
+    outUv.y = 0.5 + (uv.y - 0.5) * (iA / sA);
+  } else {
+    outUv.x = 0.5 + (uv.x - 0.5) * (sA / iA);
+  }
+  return outUv;
+}
+
+void main() {
+  vec2 puv = coverUV(vUv, uResolution, uImageSize);
+  if (puv.x < 0.0 || puv.x > 1.0 || puv.y < 0.0 || puv.y > 1.0) discard;
+
+  if (uUsePrev > 0.5) {
+    vec2 puvP = coverUV(vUv, uResolution, uPrevSize);
+    if (puvP.x >= 0.0 && puvP.x <= 1.0 && puvP.y >= 0.0 && puvP.y <= 1.0) {
+      vec3 prev = mix(
+        texture2D(uPrevMap, puvP).rgb,
+        texture2D(uPrevMapHi, puvP).rgb,
+        clamp(uPrevDetail, 0.0, 1.0)
+      );
+      float Lp = dot(prev, vec3(0.2126, 0.7152, 0.0722));
+      if (Lp >= (1.0 - uPrevCutoff)) discard;
+    }
+  }
+
+  vec3 photo = mix(
+    texture2D(uMap, puv).rgb,
+    texture2D(uMapHi, puv).rgb,
+    clamp(uDetailMix, 0.0, 1.0)
+  );
+  float L = dot(photo, vec3(0.2126, 0.7152, 0.0722));
+  if (L < (1.0 - uCutoff)) discard;
+
+  vec4 t = texture2D(uTitle, vUv);
+  if (t.a < 0.05) discard;
+  gl_FragColor = vec4(1.0, 1.0, 1.0, t.a);
+}
+`;
+
+/**
+ * Keep-going: extract/threshold come le slide.
+ * uUsePrev: compare nei “buchi” dell’immagine precedente;
+ * uCutoff: scompare con l’extract dell’ultima delle due media.
+ */
+const keepFollowFrag = /* glsl */ `
+uniform sampler2D uTitle;
+uniform sampler2D uMap;
+uniform sampler2D uMapHi;
+uniform sampler2D uPrevMap;
+uniform sampler2D uPrevMapHi;
+uniform float uDetailMix;
+uniform float uPrevDetail;
+uniform float uCutoff;
+uniform float uPrevCutoff;
+uniform float uUsePrev;
+uniform vec2 uResolution;
+uniform vec2 uImageSize;
+uniform vec2 uPrevSize;
+varying vec2 vUv;
+
+vec2 coverUV(vec2 uv, vec2 res, vec2 img) {
+  float sA = res.x / max(res.y, 1.0);
+  float iA = img.x / max(img.y, 1.0);
+  vec2 outUv = uv;
+  if (sA > iA) {
+    outUv.y = 0.5 + (uv.y - 0.5) * (iA / sA);
+  } else {
+    outUv.x = 0.5 + (uv.x - 0.5) * (sA / iA);
+  }
+  return outUv;
+}
+
+void main() {
+  vec2 puv = coverUV(vUv, uResolution, uImageSize);
+  if (puv.x < 0.0 || puv.x > 1.0 || puv.y < 0.0 || puv.y > 1.0) discard;
+
+  // compare solo dove la slide precedente è già stata estratta
+  if (uUsePrev > 0.5) {
+    vec2 puvP = coverUV(vUv, uResolution, uPrevSize);
+    if (puvP.x >= 0.0 && puvP.x <= 1.0 && puvP.y >= 0.0 && puvP.y <= 1.0) {
+      vec3 prev = mix(
+        texture2D(uPrevMap, puvP).rgb,
+        texture2D(uPrevMapHi, puvP).rgb,
+        clamp(uPrevDetail, 0.0, 1.0)
+      );
+      float Lp = dot(prev, vec3(0.2126, 0.7152, 0.0722));
+      if (Lp >= (1.0 - uPrevCutoff)) discard;
+    }
+  }
+
+  vec3 photo = mix(
+    texture2D(uMap, puv).rgb,
+    texture2D(uMapHi, puv).rgb,
+    clamp(uDetailMix, 0.0, 1.0)
+  );
+  float L = dot(photo, vec3(0.2126, 0.7152, 0.0722));
+  if (L < (1.0 - uCutoff)) discard;
+
+  vec4 t = texture2D(uTitle, vUv);
+  if (t.a < 0.05) discard;
+  vec3 diff = abs(t.rgb - photo);
+  gl_FragColor = vec4(diff, t.a);
+}
+`;
+
 /** Titolo: stesso erase-luma della prima immagine; texture fissa (niente ripaint → niente drift). */
 const titleFollowFrag = /* glsl */ `
 uniform sampler2D uTitle;
@@ -60,7 +189,7 @@ void main() {
 
 const TITLE_WORDS = ['reach', 'the', 'light', 'at', 'the', 'peak'];
 
-/** Sfondo morph B/N + noise. uLift 0 = landing scura, 1 = finale chiaro. */
+/** Sfondo morph B/N + noise. uLift 0 = landing scura, 1 = finale quasi bianco. */
 const morphBgFrag = /* glsl */ `
 uniform sampler2D uTop;
 uniform sampler2D uBot;
@@ -99,32 +228,30 @@ float hash(vec2 p) {
 }
 
 float grain(vec2 uv) {
-  // grana fine e statica (niente flicker)
   return hash(floor(uv * uResolution * 1.6)) * 2.0 - 1.0;
 }
 
 void main() {
+  // drift unico e condiviso: se top/bot usano UV diversi,
+  // al cambio coppia (bot → top) l’immagine salta di qualche mm
   vec2 drift = vec2(
     sin(uTime * 0.11) * 0.018,
     cos(uTime * 0.085 + 1.2) * 0.014
   );
-  vec2 uvTop = vUv + drift;
-  // offset diverso sul bot → il passaggio si legge meglio
-  vec2 uvBot = vUv - drift * 0.7 + vec2(0.03, -0.02);
+  vec2 uv = vUv + drift;
 
-  float Lt = sampleLuma(uTop, uvTop, uTopSize);
-  float Lb = sampleLuma(uBot, uvBot, uBotSize);
+  float Lt = sampleLuma(uTop, uv, uTopSize);
+  float Lb = sampleLuma(uBot, uv, uBotSize);
 
-  // erase netto tipo sequenza (soglia stretta)
   float edge = step(1.0 - uCutoff, Lt);
   float L = mix(Lb, Lt, edge);
 
-  // invertito; uLift porta la gamma dal molto scuro al quasi bianco
   L = 1.0 - clamp(L, 0.0, 1.0);
-  float lo = mix(0.01, 0.90, uLift);
+  // stesso morph; solo il finale (uLift=1) va quasi al bianco
+  float lo = mix(0.01, 0.88, uLift);
   float hi = mix(0.14, 0.995, uLift);
-  L = mix(lo, hi, pow(L, mix(1.2, 0.85, uLift)));
-  L += grain(vUv) * mix(0.045, 0.04, uLift);
+  L = mix(lo, hi, pow(L, mix(1.2, 0.9, uLift)));
+  L += grain(vUv) * mix(0.045, 0.035, uLift);
   float dim = mix(uDim, 1.0, uLift);
   L = clamp(L * dim, 0.0, 1.0);
   gl_FragColor = vec4(vec3(L), 1.0);
@@ -307,6 +434,20 @@ export function createExperience(canvas) {
   /** @type {HTMLCanvasElement | null} */
   let titleCanvas = null;
   /** @type {THREE.Mesh | null} */
+  let keepMesh = null;
+  /** @type {HTMLCanvasElement | null} */
+  let keepCanvas = null;
+  /** Indice timeline per “keep going” (altitudine ~2401); dura 2 media. */
+  let keepGoingIndex = -1;
+  const KEEP_GOING_SPAN = 2;
+  /** @type {THREE.Mesh | null} */
+  let worthMesh = null;
+  /** @type {HTMLCanvasElement | null} */
+  let worthCanvas = null;
+  /** Indice slide finale (foto peak) per “it was worth it…”. */
+  let worthItIndex = -1;
+  const WORTH_IT_TEXT = 'it was worth it, enjoy the light';
+  /** @type {THREE.Mesh | null} */
   let morphBg = null;
   /** @type {THREE.Texture[]} */
   let morphTexs = [];
@@ -371,16 +512,6 @@ export function createExperience(canvas) {
     mesh.userData.aspect = w / h;
   }
 
-  function makeSolidTexture(hex = '#ffffff') {
-    const canvas = document.createElement('canvas');
-    canvas.width = 4;
-    canvas.height = 4;
-    const ctx = canvas.getContext('2d', { alpha: false });
-    ctx.fillStyle = hex;
-    ctx.fillRect(0, 0, 4, 4);
-    return prepTex(new THREE.CanvasTexture(canvas));
-  }
-
   function makeShaderMat(tex, item = {}) {
     const img = tex.image;
     const iw = img.width || 1;
@@ -398,6 +529,7 @@ export function createExperience(canvas) {
         uCover: { value: 0 },
         uOpacity: { value: 1 },
         uGrain: { value: 0 },
+        uUseAlpha: { value: 0 },
         uResolution: {
           value: new THREE.Vector2(window.innerWidth, window.innerHeight)
         },
@@ -411,22 +543,30 @@ export function createExperience(canvas) {
     });
   }
 
-  /** Ultimo layer della sequenza: sfondo bianco pieno. */
-  function makeWhiteEndMesh(index) {
-    const tex = makeSolidTexture('#ffffff');
-    const mat = makeShaderMat(tex, { light: 1, shadow: 0 });
+  /** Ultimo layer: PNG ritagliato; dietro si vede il morph bianco. */
+  async function makeEndMesh(index) {
+    const url = '/assets/images/end_peak.png';
+    const tex = prepTex(await loadTexture(loader, url));
+    const img = tex.image;
+    const iw = img.width || 1;
+    const ih = img.height || 1;
+    // grading come le altre slide (luma → blu/rosso), non forzata al 100% light
+    const mat = makeShaderMat(tex, { light: 0, shadow: 0 });
     mat.uniforms.uDetailMix.value = 1;
+    mat.uniforms.uMapHi.value = tex;
+    mat.uniforms.uUseAlpha.value = 1;
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
     mesh.userData.kind = 'end';
     mesh.userData.isEndSlide = true;
     mesh.userData.index = index;
-    mesh.userData.item = { kind: 'end', time: '' };
+    // HUD resta 100% light; lo shader usa luma neutra
+    mesh.userData.item = { kind: 'end', time: '', light: 1, shadow: 0 };
     mesh.userData.video = null;
     mesh.userData.texture = tex;
     mesh.userData.thumbTex = tex;
     mesh.userData.fullReady = true;
     mesh.userData.detail = 1;
-    mesh.userData.aspect = 1;
+    mesh.userData.aspect = iw / Math.max(ih, 1);
     mesh.userData.angle0 = 0;
     mesh.visible = false;
     return mesh;
@@ -542,12 +682,27 @@ export function createExperience(canvas) {
 
     await buildClockFace(items);
     await buildTitleOverlay();
+    await buildKeepGoingOverlay();
+    await buildWorthItOverlay();
     await buildMorphBg(items);
 
-    // fine sequenza → sfondo bianco (non in raggiera)
-    const endMesh = makeWhiteEndMesh(n);
+    // fine sequenza → foto peak (non in raggiera; stesso stile extract/grana)
+    const endMesh = await makeEndMesh(n);
     scene.add(endMesh);
     meshes.push(endMesh);
+    worthItIndex = n;
+
+    // testo “keep going” sull’immagine a ~2401 m
+    const ELE_MIN = 2065;
+    const ELE_MAX = 2717;
+    const TARGET_ELE = 2401;
+    keepGoingIndex = Math.min(
+      n - 1,
+      Math.max(
+        0,
+        Math.round(((TARGET_ELE - ELE_MIN) / (ELE_MAX - ELE_MIN)) * (n - 1))
+      )
+    );
 
     intro = 0;
     seq = 0;
@@ -597,6 +752,8 @@ export function createExperience(canvas) {
       layoutSequence(fullW, fullH);
       setClockVisible(false);
       layoutTitleOverlay();
+      layoutKeepGoingOverlay();
+      layoutWorthItOverlay();
       layoutMorphBg();
       // visibilità gestita da tickMorphBg (off in mezzo, on al finale chiaro)
       if (!isEndReveal()) setMorphBgVisible(false);
@@ -605,6 +762,8 @@ export function createExperience(canvas) {
     }
 
     if (titleMesh) titleMesh.visible = false;
+    if (keepMesh) keepMesh.visible = false;
+    if (worthMesh) worthMesh.visible = false;
     layoutMorphBg();
 
     // prefetch quando si inizia a raggruppare
@@ -788,6 +947,19 @@ export function createExperience(canvas) {
     clockGroup = null;
   }
 
+  /** Baseline alfabetica reale della riga DOM (marker inline-block). */
+  function readDomBaselineY(line) {
+    const marker = document.createElement('span');
+    marker.setAttribute('aria-hidden', 'true');
+    marker.style.cssText =
+      'display:inline-block;width:0;height:1px;padding:0;border:0;margin:0;vertical-align:baseline;overflow:hidden;';
+    line.appendChild(marker);
+    // bottom del box allineato alla baseline della riga
+    const y = marker.getBoundingClientRect().bottom;
+    line.removeChild(marker);
+    return y;
+  }
+
   function paintTitleCanvas() {
     if (!titleCanvas) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -806,30 +978,34 @@ export function createExperience(canvas) {
     ctx.clearRect(0, 0, cssW, cssH);
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
+    ctx.textBaseline = 'alphabetic';
 
-    // copia pixel-perfect dal DOM → stessa size della landing
+    // copia pixel-perfect dal DOM → stessa size / baseline della landing
     const spans = document.querySelectorAll('#peak-title .peak-line > span');
     const line = document.querySelector('#peak-title .peak-line');
     if (spans.length && line) {
       const cs = getComputedStyle(line);
-      ctx.font = cs.font || `300 ${cs.fontSize} "GT Cinetype", sans-serif`;
-      spans.forEach((span) => {
-        const r = span.getBoundingClientRect();
-        ctx.fillText(span.textContent || '', r.left, r.top + r.height * 0.5);
+      ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      if ('letterSpacing' in ctx) ctx.letterSpacing = cs.letterSpacing || '0px';
+      // posizioni X prima del marker (il marker non deve spostare le parole)
+      const xs = Array.from(spans, (span) => span.getBoundingClientRect().left);
+      const baseY = readDomBaselineY(line);
+      spans.forEach((span, i) => {
+        ctx.fillText(span.textContent || '', xs[i], baseY);
       });
       return;
     }
 
-    // fallback se il DOM non è pronto (sempre in CSS px)
-    const fontPx = Math.min(cssW * 0.072, cssH * 0.12);
-    ctx.font = `300 ${fontPx}px "GT Cinetype", "GTCinetype", sans-serif`;
-    const pad = cssW * 0.025;
+    // fallback se il DOM non è pronto — blocco centrato
+    const fontPx = Math.min(cssW * 0.045, 36);
+    ctx.font = `400 ${fontPx}px "GT Cinetype", "GTCinetype", sans-serif`;
+    if ('letterSpacing' in ctx) ctx.letterSpacing = `${fontPx * 0.02}px`;
+    const gap = fontPx * 0.35;
     const widths = TITLE_WORDS.map((word) => ctx.measureText(word).width);
-    const total = widths.reduce((a, b) => a + b, 0);
-    const gap = TITLE_WORDS.length > 1 ? (cssW - pad * 2 - total) / (TITLE_WORDS.length - 1) : 0;
-    let x = pad;
-    const y = cssH * 0.5;
+    const total =
+      widths.reduce((a, b) => a + b, 0) + gap * (TITLE_WORDS.length - 1);
+    let x = (cssW - total) * 0.5;
+    const y = cssH * 0.5 + fontPx * 0.35;
     for (let i = 0; i < TITLE_WORDS.length; i++) {
       ctx.fillText(TITLE_WORDS[i], x, y);
       x += widths[i] + gap;
@@ -839,7 +1015,7 @@ export function createExperience(canvas) {
   async function buildTitleOverlay() {
     disposeTitleOverlay();
     try {
-      await document.fonts.load('300 48px "GT Cinetype"');
+      await document.fonts.load('400 18px "GT Cinetype"');
       await document.fonts.ready;
     } catch {
       /* ignore */
@@ -922,6 +1098,272 @@ export function createExperience(canvas) {
     titleCanvas = null;
   }
 
+  function paintKeepGoingCanvas() {
+    if (!keepCanvas) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const cssW = window.innerWidth;
+    const cssH = window.innerHeight;
+    const w = Math.max(2, Math.round(cssW * dpr));
+    const h = Math.max(2, Math.round(cssH * dpr));
+    if (keepCanvas.width !== w || keepCanvas.height !== h) {
+      keepCanvas.width = w;
+      keepCanvas.height = h;
+    }
+    const ctx = keepCanvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    const el = document.getElementById('hud-keepgoing');
+    const cs = el ? getComputedStyle(el) : null;
+    const font =
+      cs?.font ||
+      '700 0.95rem "GT Cinetype", "GTCinetype", sans-serif';
+    ctx.font = font;
+    // forza px numerici se il browser lascia "0.95rem" in font shorthand
+    if (cs) {
+      ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    }
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText("keep going, don't give up", cssW * 0.5, cssH * 0.5);
+  }
+
+  async function buildKeepGoingOverlay() {
+    disposeKeepGoingOverlay();
+    try {
+      await document.fonts.load('700 16px "GT Cinetype"');
+      await document.fonts.ready;
+    } catch {
+      /* ignore */
+    }
+
+    keepCanvas = document.createElement('canvas');
+    paintKeepGoingCanvas();
+    const tex = prepTex(new THREE.CanvasTexture(keepCanvas));
+    tex.premultiplyAlpha = false;
+
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: edgeVert,
+      fragmentShader: keepFollowFrag,
+      uniforms: {
+        uTitle: { value: tex },
+        uMap: { value: tex },
+        uMapHi: { value: tex },
+        uPrevMap: { value: tex },
+        uPrevMapHi: { value: tex },
+        uDetailMix: { value: 0 },
+        uPrevDetail: { value: 0 },
+        uCutoff: { value: 1 },
+        uPrevCutoff: { value: 0 },
+        uUsePrev: { value: 0 },
+        uResolution: {
+          value: new THREE.Vector2(window.innerWidth, window.innerHeight)
+        },
+        uImageSize: { value: new THREE.Vector2(1, 1) },
+        uPrevSize: { value: new THREE.Vector2(1, 1) }
+      },
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false
+    });
+
+    keepMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+    keepMesh.frustumCulled = false;
+    keepMesh.renderOrder = 201;
+    keepMesh.visible = false;
+    scene.add(keepMesh);
+  }
+
+  function layoutKeepGoingOverlay() {
+    if (!keepMesh || keepGoingIndex < 0 || mode !== 'sequence') {
+      if (keepMesh) keepMesh.visible = false;
+      return;
+    }
+
+    const i0 = keepGoingIndex;
+    const i1 = Math.min(i0 + KEEP_GOING_SPAN - 1, items.length - 1);
+    const p = seq;
+    // finestra: reveal del 1° → resta su 2 media → extract del 2°
+    if (p <= i0 - 1 || p >= i1 + 1) {
+      keepMesh.visible = false;
+      return;
+    }
+
+    let hostIdx = i0;
+    let cutoff = 1;
+    let usePrev = 0;
+    let prevIdx = -1;
+    let prevCutoff = 0;
+
+    if (p < i0) {
+      // compare nei buchi dell’extract della slide precedente
+      hostIdx = i0;
+      cutoff = 1;
+      usePrev = 1;
+      prevIdx = i0 - 1;
+      prevCutoff = 1 - (p - (i0 - 1));
+    } else if (p < i1) {
+      // sulle due media: testo pieno (non segue l’erase del 1°)
+      hostIdx = p >= i0 + 1 ? i1 : i0;
+      cutoff = 1;
+    } else {
+      // scompare con l’extract della 2ª media
+      hostIdx = i1;
+      cutoff = 1 - (p - i1);
+    }
+
+    const mesh = meshes[hostIdx];
+    if (!mesh || mesh.userData.isEndSlide) {
+      keepMesh.visible = false;
+      return;
+    }
+
+    const { w: fullW, h: fullH } = viewSize();
+    keepMesh.position.set(0, 0, 0.035);
+    keepMesh.scale.set(fullW, fullH, 1);
+    keepMesh.rotation.set(0, 0, 0);
+
+    const src = mesh.material.uniforms;
+    const mat = keepMesh.material;
+    mat.uniforms.uMap.value = src.uMap.value;
+    mat.uniforms.uMapHi.value = src.uMapHi.value;
+    mat.uniforms.uDetailMix.value = src.uDetailMix.value;
+    mat.uniforms.uCutoff.value = cutoff;
+    mat.uniforms.uImageSize.value.copy(src.uImageSize.value);
+    mat.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
+    mat.uniforms.uUsePrev.value = usePrev;
+
+    if (usePrev && prevIdx >= 0 && meshes[prevIdx]) {
+      const prev = meshes[prevIdx].material.uniforms;
+      mat.uniforms.uPrevMap.value = prev.uMap.value;
+      mat.uniforms.uPrevMapHi.value = prev.uMapHi.value;
+      mat.uniforms.uPrevDetail.value = prev.uDetailMix.value;
+      mat.uniforms.uPrevCutoff.value = prevCutoff;
+      mat.uniforms.uPrevSize.value.copy(prev.uImageSize.value);
+    }
+
+    keepMesh.visible = cutoff > 0.001;
+  }
+
+  function captureKeepGoingFromDom() {
+    if (!keepCanvas || !keepMesh) return;
+    paintKeepGoingCanvas();
+    const tex = keepMesh.material.uniforms.uTitle.value;
+    if (tex) tex.needsUpdate = true;
+  }
+
+  function disposeKeepGoingOverlay() {
+    if (keepMesh) {
+      scene.remove(keepMesh);
+      keepMesh.material.uniforms.uTitle.value?.dispose();
+      keepMesh.material.dispose();
+      keepMesh.geometry.dispose();
+    }
+    keepMesh = null;
+    keepCanvas = null;
+  }
+
+  function paintWorthItCanvas() {
+    if (!worthCanvas) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const cssW = window.innerWidth;
+    const cssH = window.innerHeight;
+    const w = Math.max(2, Math.round(cssW * dpr));
+    const h = Math.max(2, Math.round(cssH * dpr));
+    if (worthCanvas.width !== w || worthCanvas.height !== h) {
+      worthCanvas.width = w;
+      worthCanvas.height = h;
+    }
+    const ctx = worthCanvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    const el = document.getElementById('hud-worthit');
+    const cs = el ? getComputedStyle(el) : null;
+    if (cs) {
+      ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      if ('letterSpacing' in ctx) ctx.letterSpacing = cs.letterSpacing || '0px';
+    } else {
+      ctx.font = '700 0.95rem "GT Cinetype", "GTCinetype", sans-serif';
+    }
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(WORTH_IT_TEXT, cssW * 0.5, cssH * 0.5);
+  }
+
+  async function buildWorthItOverlay() {
+    disposeWorthItOverlay();
+    try {
+      await document.fonts.load('700 16px "GT Cinetype"');
+      await document.fonts.ready;
+    } catch {
+      /* ignore */
+    }
+
+    worthCanvas = document.createElement('canvas');
+    paintWorthItCanvas();
+    const tex = prepTex(new THREE.CanvasTexture(worthCanvas));
+    tex.premultiplyAlpha = false;
+
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: edgeVert,
+      fragmentShader: worthFollowFrag,
+      uniforms: {
+        uTitle: { value: tex },
+        uMap: { value: tex },
+        uMapHi: { value: tex },
+        uPrevMap: { value: tex },
+        uPrevMapHi: { value: tex },
+        uDetailMix: { value: 0 },
+        uPrevDetail: { value: 0 },
+        uCutoff: { value: 1 },
+        uPrevCutoff: { value: 0 },
+        uUsePrev: { value: 0 },
+        uResolution: {
+          value: new THREE.Vector2(window.innerWidth, window.innerHeight)
+        },
+        uImageSize: { value: new THREE.Vector2(1, 1) },
+        uPrevSize: { value: new THREE.Vector2(1, 1) }
+      },
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false
+    });
+
+    worthMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+    worthMesh.frustumCulled = false;
+    worthMesh.renderOrder = 202;
+    worthMesh.visible = false;
+    scene.add(worthMesh);
+  }
+
+  /** Ex “it was worth it”: ora è il pulsante DOM sulla pagina bianca. */
+  function layoutWorthItOverlay() {
+    if (worthMesh) worthMesh.visible = false;
+  }
+
+  function captureWorthItFromDom() {
+    if (!worthCanvas || !worthMesh) return;
+    paintWorthItCanvas();
+    const tex = worthMesh.material.uniforms.uTitle.value;
+    if (tex) tex.needsUpdate = true;
+  }
+
+  function disposeWorthItOverlay() {
+    if (worthMesh) {
+      scene.remove(worthMesh);
+      worthMesh.material.uniforms.uTitle.value?.dispose();
+      worthMesh.material.dispose();
+      worthMesh.geometry.dispose();
+    }
+    worthMesh = null;
+    worthCanvas = null;
+  }
+
   function morphTexSize(tex) {
     const img = tex?.image;
     return {
@@ -930,7 +1372,7 @@ export function createExperience(canvas) {
     };
   }
 
-  function setMorphPair(index) {
+  function setMorphPair(index, { resetCutoff = true } = {}) {
     if (!morphBg || morphTexs.length < 2) return;
     const n = morphTexs.length;
     const i = ((index % n) + n) % n;
@@ -943,7 +1385,8 @@ export function createExperience(canvas) {
     const b = morphTexSize(morphTexs[j]);
     mat.uniforms.uTopSize.value.set(a.w, a.h);
     mat.uniforms.uBotSize.value.set(b.w, b.h);
-    mat.uniforms.uCutoff.value = 1;
+    // dopo un ciclo completo il bot diventa top: cutoff=1 mostra ancora lo stesso frame
+    if (resetCutoff) mat.uniforms.uCutoff.value = 1;
   }
 
   async function buildMorphBg() {
@@ -1021,7 +1464,7 @@ export function createExperience(canvas) {
     return seq >= n - 2 - 1e-4;
   }
 
-  /** Avanza morph B/N + drift; landing scura, finale chiaro. */
+  /** Morph B/N: landing scura + finale quasi bianco dietro la peak. */
   function tickMorphBg(now = performance.now()) {
     if (!morphBg || morphTexs.length < 2) return;
 
@@ -1041,9 +1484,9 @@ export function createExperience(canvas) {
       morphBg.material.uniforms.uLift.value = 1;
       morphBg.material.uniforms.uDim.value = 1;
     } else {
-      const g = easeInOut(Math.min(Math.max(intro, 0), 1));
+      // resta pieno in landing + chiusura ventaglio; si spegne solo con lo zoom (m)
       const m = easeInOut(Math.min(Math.max(intro - 1, 0), 1));
-      const fade = Math.max(0, 1 - g * 0.65 - m);
+      const fade = Math.max(0, 1 - m);
       morphBg.visible = fade > 0.02;
       morphBg.material.uniforms.uLift.value = 0;
       morphBg.material.uniforms.uDim.value = 0.75 * fade;
@@ -1052,13 +1495,12 @@ export function createExperience(canvas) {
 
     morphBg.material.uniforms.uTime.value = now * 0.001;
 
-    // passaggio più veloce e leggibile (~2.4s)
+    // stesso ritmo della landing (~2.4s)
     morphT += dt / 2.4;
     if (morphT >= 1) {
       morphT -= 1;
       setMorphPair(morphIndex + 1);
     }
-    // hold breve poi erase deciso
     const t = Math.min(morphT, 1);
     const erase = t < 0.12 ? 0 : (t - 0.12) / 0.88;
     morphBg.material.uniforms.uCutoff.value = 1 - easeInOut(erase);
@@ -1080,37 +1522,38 @@ export function createExperience(canvas) {
 
   function layoutSequence(fullW, fullH) {
     const n = meshes.length;
-    const max = Math.max(n - 1, 0);
+    // max = n → l’ultima (peak) può estrarsi del tutto sullo sfondo bianco
+    const max = Math.max(n, 0);
     const p = Math.min(Math.max(seq, 0), max);
-    const active = Math.min(Math.floor(p), n - 1);
+    const active = Math.min(Math.floor(p), Math.max(n - 1, 0));
 
-    // lazy full intorno all’attivo
+    // lazy full intorno all’attivo (+ keep-going / finale per extract sync)
     ensureFull(active);
     ensureFull(active + 1);
     ensureFull(active - 1);
+    if (keepGoingIndex >= 0) {
+      ensureFull(keepGoingIndex);
+      ensureFull(keepGoingIndex + 1);
+      ensureFull(keepGoingIndex - 1);
+    }
+    if (worthItIndex >= 0) {
+      ensureFull(worthItIndex);
+      ensureFull(worthItIndex - 1);
+    }
 
     for (let i = 0; i < n; i++) {
       const mesh = meshes[i];
-      const isEnd = mesh.userData.isEndSlide;
-      const cover = isEnd
-        ? { w: fullW, h: fullH }
-        : coverSize(fullW, fullH, meshAspect(mesh));
+      const cover = coverSize(fullW, fullH, meshAspect(mesh));
       mesh.position.set(0, 0, -i * Z_GAP);
-      // stesso sizing del morph finale (aspect immagine, cover viewport)
+      // aspect immagine, cover viewport (come le altre slide)
       mesh.scale.set(cover.w, cover.h, 1);
       mesh.rotation.z = 0;
       mesh.material.uniforms.uCover.value = 0;
       mesh.material.uniforms.uOpacity.value = 1;
-      // stessa grana statica della landing
-      mesh.material.uniforms.uGrain.value = isEnd ? 0 : 0.045;
+      // stessa grana statica della sequenza (anche sulla foto finale)
+      mesh.material.uniforms.uGrain.value = 0.045;
       mesh.renderOrder = n - i;
 
-      if (i === n - 1) {
-        // sostituita dallo stesso morph della landing (gamma chiara)
-        mesh.visible = false;
-        mesh.material.uniforms.uCutoff.value = 1;
-        continue;
-      }
       if (p >= i + 1) {
         mesh.material.uniforms.uCutoff.value = 0;
         mesh.visible = false;
@@ -1123,6 +1566,8 @@ export function createExperience(canvas) {
       }
     }
     layoutTitleOverlay();
+    layoutKeepGoingOverlay();
+    layoutWorthItOverlay();
     syncVideos();
   }
 
@@ -1178,6 +1623,16 @@ export function createExperience(canvas) {
 
     // foto del titolo dal DOM ancora visibile → posizione bloccata per tutta la sequenza
     captureTitleFromDom();
+    captureKeepGoingFromDom();
+    captureWorthItFromDom();
+
+    // spegni il DOM PRIMA del primo frame WebGL: altrimenti 1 frame di doppio titolo
+    // (baseline diversa) → scatto di qualche mm all’inizio dell’erase
+    const peakTitleEl = document.getElementById('peak-title');
+    if (peakTitleEl) {
+      peakTitleEl.style.opacity = '0';
+      peakTitleEl.style.visibility = 'hidden';
+    }
 
     mode = 'sequence';
     seq = 0;
@@ -1208,7 +1663,8 @@ export function createExperience(canvas) {
   }
 
   function setSeq(value) {
-    const max = Math.max(meshes.length - 1, 0);
+    // fino a meshes.length: peak estratta → solo sfondo bianco + scritta finale
+    const max = Math.max(meshes.length, 0);
     seq = Math.min(Math.max(value, 0), max);
     layout();
   }
@@ -1255,15 +1711,18 @@ export function createExperience(canvas) {
     if (titleCanvas && titleMesh) {
       captureTitleFromDom();
     }
+    if (keepCanvas && keepMesh) {
+      captureKeepGoingFromDom();
+    }
+    if (worthCanvas && worthMesh) {
+      captureWorthItFromDom();
+    }
     layout();
   }
 
   function needsIdleMotion() {
     // float tile + morph sfondo in landing / finale chiaro
-    return (
-      (mode === 'intro' && intro < 1.85) ||
-      isEndReveal()
-    );
+    return (mode === 'intro' && intro < 1.85) || isEndReveal();
   }
 
   function render() {
@@ -1272,6 +1731,9 @@ export function createExperience(canvas) {
       tickMorphBg(performance.now());
     } else {
       updateDetailMix();
+      layoutTitleOverlay();
+      layoutKeepGoingOverlay();
+      layoutWorthItOverlay();
       if (isEndReveal()) tickMorphBg(performance.now());
     }
     if (mode === 'sequence' || intro > 1.3) {
@@ -1318,7 +1780,11 @@ export function createExperience(canvas) {
     meshes = [];
     disposeClock();
     disposeTitleOverlay();
+    disposeKeepGoingOverlay();
+    disposeWorthItOverlay();
     disposeMorphBg();
+    keepGoingIndex = -1;
+    worthItIndex = -1;
     fullJobs.clear();
   }
 
@@ -1347,6 +1813,7 @@ export function createExperience(canvas) {
       return meshes[0].material.uniforms.uCutoff.value;
     },
     captureTitleFromDom,
+    captureKeepGoingFromDom,
     get count() {
       return items.length;
     },

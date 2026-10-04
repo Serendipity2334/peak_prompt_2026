@@ -2,6 +2,7 @@
  * B/N + Sobel blu/rosso.
  * uMap = thumb, uMapHi = full; uDetailMix 0→1 blend senza stacco.
  * uGrain: stessa grana fine statica della landing (0 = off).
+ * uUseAlpha: PNG ritagliato (slide finale) → buchi trasparenti, sfondo dietro.
  */
 export default /* glsl */ `
 uniform sampler2D uMap;
@@ -13,6 +14,7 @@ uniform float uShadow;
 uniform float uCover;
 uniform float uOpacity;
 uniform float uGrain;
+uniform float uUseAlpha;
 uniform vec2 uResolution;
 uniform vec2 uImageSize;
 varying vec2 vUv;
@@ -32,14 +34,17 @@ vec2 coverUV(vec2 uv, vec2 res, vec2 img) {
   return outUv;
 }
 
-vec3 sampleMix(vec2 uv) {
-  vec3 lo = texture2D(uMap, uv).rgb;
-  vec3 hi = texture2D(uMapHi, uv).rgb;
+vec4 sampleMix4(vec2 uv) {
+  vec4 lo = texture2D(uMap, uv);
+  vec4 hi = texture2D(uMapHi, uv);
   return mix(lo, hi, clamp(uDetailMix, 0.0, 1.0));
 }
 
 float lumaAt(vec2 uv) {
-  return dot(sampleMix(uv), vec3(0.2126, 0.7152, 0.0722));
+  vec4 s = sampleMix4(uv);
+  // fuori dal ritaglio: tratta come bianco (sfondo finale)
+  if (uUseAlpha > 0.5 && s.a < 0.08) return 1.0;
+  return dot(s.rgb, vec3(0.2126, 0.7152, 0.0722));
 }
 
 float hash(vec2 p) {
@@ -55,7 +60,10 @@ void main() {
   vec2 uv = uCover > 0.5 ? coverUV(vUv, uResolution, uImageSize) : vUv;
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) discard;
 
-  vec3 tex = sampleMix(uv);
+  vec4 tex4 = sampleMix4(uv);
+  if (uUseAlpha > 0.5 && tex4.a < 0.08) discard;
+
+  vec3 tex = tex4.rgb;
   float L = dot(tex, vec3(0.2126, 0.7152, 0.0722));
 
   if (L < (1.0 - uCutoff)) discard;
@@ -88,6 +96,8 @@ void main() {
   color += grain(vUv) * uGrain;
   color = clamp(color, 0.0, 1.0);
 
-  gl_FragColor = vec4(color, clamp(uOpacity, 0.0, 1.0));
+  float a = clamp(uOpacity, 0.0, 1.0);
+  if (uUseAlpha > 0.5) a *= tex4.a;
+  gl_FragColor = vec4(color, a);
 }
 `;

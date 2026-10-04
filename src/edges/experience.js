@@ -213,6 +213,7 @@ void main() {
 
   vec4 t = texture2D(uTitle, vUv);
   if (t.a < 0.05) discard;
+  // difference puro (niente ink/contrasto → non “ingrassa” i glifi)
   vec3 diff = abs(t.rgb - photo);
   gl_FragColor = vec4(diff, t.a);
 }
@@ -394,6 +395,24 @@ function applySeqHudFont(ctx, probeId = 'hud-ele') {
   if ('letterSpacing' in ctx) ctx.letterSpacing = `${0.06 * rem}px`;
 }
 
+/** Schiacciamento verticale frasi/controlli (non ele/luce/meta/orari). */
+function seqSquashY() {
+  const v = parseFloat(
+    getComputedStyle(document.documentElement).getPropertyValue('--seq-squash-y')
+  );
+  return Number.isFinite(v) && v > 0 ? v : 0.88;
+}
+
+function withSeqSquashY(ctx, cx, cy, draw) {
+  const sy = seqSquashY();
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(1, sy);
+  ctx.translate(-cx, -cy);
+  draw();
+  ctx.restore();
+}
+
 function downscaleTexture(texture, maxW = MAX_TEX_W) {
   const img = texture.image;
   if (!img?.width || img.width <= maxW) return prepTex(texture);
@@ -417,6 +436,10 @@ function loadTexture(loader, url) {
 }
 
 const CLOCK_WEDGES = 10;
+/** Illuminazione orari landing: uno ogni 2s, senso orario da 14:09. */
+const CLOCK_PULSE_MS = 2000;
+const CLOCK_PULSE_DIM = 0.22;
+const CLOCK_PULSE_START = '14:09';
 
 function pad2(n) {
   return String(Math.floor(Math.abs(n)) % 100).padStart(2, '0');
@@ -552,6 +575,9 @@ export function createExperience(canvas) {
   let clockGroup = null;
   /** @type {THREE.Mesh[]} */
   let clockLabels = [];
+  /** Indice in clockLabels da cui parte il pulse (14:09). */
+  let clockPulseStart = 0;
+  let clockPulseT0 = 0;
   /** @type {THREE.Mesh | null} */
   let titleMesh = null;
   /** @type {HTMLCanvasElement | null} */
@@ -1081,12 +1107,21 @@ export function createExperience(canvas) {
       const i0 = wedgeFirst[k];
       if (i0 < 0) continue;
       const angle = Math.PI / 2 - (k / CLOCK_WEDGES) * Math.PI * 2;
-      const label = makeTimeLabel(formatClockTime(list[i0]));
+      const timeText = formatClockTime(list[i0]);
+      const label = makeTimeLabel(timeText);
       label.userData.angle = angle;
       label.userData.wedge = k;
+      label.userData.timeText = timeText;
       clockGroup.add(label);
       clockLabels.push(label);
     }
+
+    // clockLabels è già in ordine orario (k=0 alle 12 → senso orario)
+    const startIdx = clockLabels.findIndex(
+      (l) => l.userData.timeText === CLOCK_PULSE_START
+    );
+    clockPulseStart = startIdx >= 0 ? startIdx : 0;
+    clockPulseT0 = performance.now();
 
     scene.add(clockGroup);
   }
@@ -1100,7 +1135,21 @@ export function createExperience(canvas) {
     const tileOut = Math.hypot(sample.w, sample.h) * 0.5;
     const rLabel = fitRadius() + tileOut + short * 0.055;
 
-    for (const label of clockLabels) {
+    let opacity = 1;
+    if (m > 0.02) opacity = Math.max(0, 1 - (m - 0.02) / 0.55);
+    if (m > 0.85) opacity = 0;
+
+    const nLab = clockLabels.length;
+    const step =
+      nLab > 0
+        ? Math.floor(
+            Math.max(0, performance.now() - clockPulseT0) / CLOCK_PULSE_MS
+          ) % nLab
+        : 0;
+    const active = nLab > 0 ? (clockPulseStart + step) % nLab : 0;
+
+    for (let i = 0; i < nLab; i++) {
+      const label = clockLabels[i];
       const a = label.userData.angle;
       const aspect = label.userData.aspect || 4;
       const lw = labelW;
@@ -1110,17 +1159,12 @@ export function createExperience(canvas) {
         (lh * 0.5) * Math.abs(Math.sin(a));
       const maxR = Math.min(halfW - lw * 0.52, halfH - lh * 0.52);
       const r = Math.min(rLabel + labelIn * 0.05, maxR);
+      const lit = i === active ? 1 : CLOCK_PULSE_DIM;
+      const pop = i === active ? 1.08 : 1;
       label.position.set(Math.cos(a) * r, Math.sin(a) * r, 0.08);
-      label.scale.set(lw, lh, 1);
+      label.scale.set(lw * pop, lh * pop, 1);
       label.rotation.z = 0;
-    }
-
-    let opacity = 1;
-    if (m > 0.02) opacity = Math.max(0, 1 - (m - 0.02) / 0.55);
-    if (m > 0.85) opacity = 0;
-
-    for (const label of clockLabels) {
-      label.material.opacity = opacity;
+      label.material.opacity = opacity * lit;
     }
     clockGroup.visible = opacity > 0.02;
   }
@@ -1134,6 +1178,8 @@ export function createExperience(canvas) {
     }
     clockLabels = [];
     clockGroup = null;
+    clockPulseStart = 0;
+    clockPulseT0 = 0;
   }
 
   /** Baseline alfabetica reale della riga DOM (marker inline-block). */
@@ -1169,18 +1215,23 @@ export function createExperience(canvas) {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
 
-    // copia pixel-perfect dal DOM → stessa size / baseline della landing
+    // misura senza scaleY DOM, poi schiaccia in canvas come il CSS
     const spans = document.querySelectorAll('#peak-title .peak-line > span');
     const line = document.querySelector('#peak-title .peak-line');
     if (spans.length && line) {
+      line.style.transform = 'none';
       const cs = getComputedStyle(line);
       ctx.font = `400 ${cs.fontSize} "GT Cinetype", "GTCinetype", sans-serif`;
       if ('letterSpacing' in ctx) ctx.letterSpacing = cs.letterSpacing || '0px';
-      // posizioni X prima del marker (il marker non deve spostare le parole)
       const xs = Array.from(spans, (span) => span.getBoundingClientRect().left);
       const baseY = readDomBaselineY(line);
-      spans.forEach((span, i) => {
-        ctx.fillText(span.textContent || '', xs[i], baseY);
+      const box = line.getBoundingClientRect();
+      const cx = box.left + box.width * 0.5;
+      line.style.removeProperty('transform');
+      withSeqSquashY(ctx, cx, baseY, () => {
+        spans.forEach((span, i) => {
+          ctx.fillText(span.textContent || '', xs[i], baseY);
+        });
       });
       return;
     }
@@ -1195,10 +1246,14 @@ export function createExperience(canvas) {
       widths.reduce((a, b) => a + b, 0) + gap * (TITLE_WORDS.length - 1);
     let x = (cssW - total) * 0.5;
     const y = cssH * 0.5 + fontPx * 0.35;
-    for (let i = 0; i < TITLE_WORDS.length; i++) {
-      ctx.fillText(TITLE_WORDS[i], x, y);
-      x += widths[i] + gap;
-    }
+    const cx = cssW * 0.5;
+    withSeqSquashY(ctx, cx, y, () => {
+      let xx = x;
+      for (let i = 0; i < TITLE_WORDS.length; i++) {
+        ctx.fillText(TITLE_WORDS[i], xx, y);
+        xx += widths[i] + gap;
+      }
+    });
   }
 
   async function buildTitleOverlay() {
@@ -1306,7 +1361,14 @@ export function createExperience(canvas) {
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText("keep going, don't give up", cssW * 0.5, cssH * 0.5);
+    ctx.lineWidth = 1;
+    ctx.lineJoin = 'miter';
+    const cx = cssW * 0.5;
+    const cy = cssH * 0.5;
+    withSeqSquashY(ctx, cx, cy, () => {
+      // solo fill Regular — niente stroke (pare bold)
+      ctx.fillText("keep going, don't give up", cx, cy);
+    });
   }
 
   async function buildKeepGoingOverlay() {
@@ -1465,14 +1527,16 @@ export function createExperience(canvas) {
     ctx.textBaseline = 'middle';
     const x = cssW * 0.5;
     const y = cssH * 0.5;
-    // alone bianco: sotto difference resta l’invert leggibile su chiaro/scuro
-    ctx.lineJoin = 'round';
-    ctx.miterLimit = 2;
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 1.15;
-    ctx.strokeText(WORTH_IT_TEXT, x, y);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(WORTH_IT_TEXT, x, y);
+    withSeqSquashY(ctx, x, y, () => {
+      // alone bianco: sotto difference resta l’invert leggibile su chiaro/scuro
+      ctx.lineJoin = 'round';
+      ctx.miterLimit = 2;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.15;
+      ctx.strokeText(WORTH_IT_TEXT, x, y);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(WORTH_IT_TEXT, x, y);
+    });
   }
 
   async function buildWorthItOverlay() {
@@ -1525,11 +1589,11 @@ export function createExperience(canvas) {
   }
 
   /** Worth-it DOM: visibile dalla mucca in poi. */
-  function syncWorthItDom(live, opacity = 1, onLight = false) {
+  function syncWorthItDom(live, opacity = 1) {
     const el = document.getElementById('hud-worthit');
     if (!el) return;
     el.classList.toggle('is-live', live);
-    el.classList.toggle('is-on-light', live && onLight);
+    el.classList.remove('is-on-light');
     el.style.opacity = live ? String(opacity) : '';
     el.setAttribute('aria-hidden', live ? 'false' : 'true');
   }
@@ -1556,8 +1620,7 @@ export function createExperience(canvas) {
 
     // fade insieme alla reveal della mucca; poi pieno fino alla fine
     const opacity = p < i0 ? Math.min(Math.max(p - (i0 - 1), 0), 1) : 1;
-    const onLight = p >= i0 + 1;
-    syncWorthItDom(true, opacity, onLight);
+    syncWorthItDom(true, opacity);
   }
 
   function captureWorthItFromDom() {
@@ -1594,7 +1657,7 @@ export function createExperience(canvas) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
 
-    // stesso size/weight degli altri testi HUD; in basso a pie’ di pagina
+    // stesso size degli HUD; schiacciato come #btn-back-darkness
     applySeqHudFont(ctx, 'hud-ele');
     ctx.fillStyle = '#050505';
     ctx.textAlign = 'center';
@@ -1603,19 +1666,21 @@ export function createExperience(canvas) {
     const y = cssH - 1.15 * (
       parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
     );
-    ctx.fillText(BACK_TEXT, x, y);
-    const tw = ctx.measureText(BACK_TEXT).width;
     const probe = document.getElementById('hud-ele');
     const fs = probe
       ? parseFloat(getComputedStyle(probe).fontSize)
       : (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16) *
         0.85;
-    ctx.strokeStyle = '#050505';
-    ctx.lineWidth = Math.max(1, fs * 0.07);
-    ctx.beginPath();
-    ctx.moveTo(x - tw * 0.5, y + fs * 0.55);
-    ctx.lineTo(x + tw * 0.5, y + fs * 0.55);
-    ctx.stroke();
+    withSeqSquashY(ctx, x, y, () => {
+      ctx.fillText(BACK_TEXT, x, y);
+      const tw = ctx.measureText(BACK_TEXT).width;
+      ctx.strokeStyle = '#050505';
+      ctx.lineWidth = Math.max(1, fs * 0.07);
+      ctx.beginPath();
+      ctx.moveTo(x - tw * 0.5, y + fs * 0.55);
+      ctx.lineTo(x + tw * 0.5, y + fs * 0.55);
+      ctx.stroke();
+    });
   }
 
   async function buildBackOverlay() {
@@ -1725,7 +1790,7 @@ export function createExperience(canvas) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
 
-    // stesso tipografico dei dati / frasi HUD
+    // stesso size degli HUD; schiacciato come i bottoni transport
     applySeqHudFont(ctx, 'hud-ele');
     const ink = transportLabels.color || '#ffffff';
     ctx.fillStyle = ink;
@@ -1737,13 +1802,15 @@ export function createExperience(canvas) {
     ctx.lineWidth = Math.max(1, rem * 0.06);
 
     const paintLabel = (text, x, y, underline) => {
-      ctx.fillText(text, x, y);
-      if (!underline) return;
-      const tw = ctx.measureText(text).width;
-      ctx.beginPath();
-      ctx.moveTo(x - tw * 0.5, y + rem * 0.55);
-      ctx.lineTo(x + tw * 0.5, y + rem * 0.55);
-      ctx.stroke();
+      withSeqSquashY(ctx, x, y, () => {
+        ctx.fillText(text, x, y);
+        if (!underline) return;
+        const tw = ctx.measureText(text).width;
+        ctx.beginPath();
+        ctx.moveTo(x - tw * 0.5, y + rem * 0.55);
+        ctx.lineTo(x + tw * 0.5, y + rem * 0.55);
+        ctx.stroke();
+      });
     };
 
     // allinea ai hit-target DOM (#seq-rew / toggle / ff)
@@ -2196,6 +2263,7 @@ export function createExperience(canvas) {
     mode = 'intro';
     seq = 0;
     intro = Math.min(Math.max(at, 0), 1.999);
+    clockPulseT0 = performance.now();
     for (const mesh of meshes) {
       mesh.material.uniforms.uCutoff.value = 1;
       mesh.visible = !mesh.userData.isEndSlide;

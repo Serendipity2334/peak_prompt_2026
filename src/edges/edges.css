@@ -33,6 +33,8 @@ body.edges-page {
   --seq-hud-size: 0.85rem;
   --seq-hud-weight: 400;
   --seq-hud-tracking: 0.06em;
+  /* frasi e controlli: leggermente schiacciati in verticale */
+  --seq-squash-y: 0.88;
   --seq-hud-line: 1.2;
 }
 
@@ -114,11 +116,13 @@ body.edges-page input {
 
 #hud-ele {
   left: 2.5vw;
+  letter-spacing: var(--seq-hud-tracking);
 }
 
 #hud-light {
   right: 2.5vw;
   text-align: right;
+  letter-spacing: var(--seq-hud-tracking);
 }
 
 #hud-keepgoing,
@@ -126,7 +130,7 @@ body.edges-page input {
   left: 50%;
   top: 50%;
   text-align: center;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) scaleY(var(--seq-squash-y));
   font-size: var(--seq-hud-size);
   font-weight: var(--seq-hud-weight);
   letter-spacing: var(--seq-hud-tracking);
@@ -137,30 +141,20 @@ body.edges-page input {
 #hud-keepgoing {
   mix-blend-mode: difference;
   color: #fff;
+  font-weight: 400;
+  /* stessa size di #hud-worthit (--seq-hud-size dal blocco condiviso) */
+  -webkit-text-stroke: 0;
+  text-shadow: none;
   opacity: 0 !important;
   visibility: hidden !important;
 }
 
-/*
- * worth-it sulla mucca: stesso nero della slide bianca + alone chiaro
- * (così resta leggibile come sul bianco, anche sulla roccia scura)
- */
+/* worth-it: difference → scura su chiaro, chiara su scuro */
 #hud-worthit {
-  mix-blend-mode: normal;
-  color: #111;
+  mix-blend-mode: difference;
+  color: #fff;
   -webkit-text-stroke: 0;
-  text-shadow:
-    0 0 1px #fff,
-    0 0 2px #fff,
-    0 0 0.35em rgba(255, 255, 255, 0.95),
-    0 1px 0 #fff,
-    0 -1px 0 #fff,
-    1px 0 0 #fff,
-    -1px 0 0 #fff,
-    1px 1px 0 #fff,
-    -1px -1px 0 #fff,
-    1px -1px 0 #fff,
-    -1px 1px 0 #fff;
+  text-shadow: none;
   opacity: 0;
   visibility: hidden;
   z-index: 14;
@@ -169,11 +163,6 @@ body.edges-page input {
 
 #hud-worthit.is-live {
   visibility: visible;
-}
-
-/* slide bianca: nero pieno, senza alone (già contrasto massimo) */
-#hud-worthit.is-on-light {
-  text-shadow: none;
 }
 
 /* transport: dal 2° file fino al media prima della peak — stesso look dei dati HUD */
@@ -187,6 +176,7 @@ body.edges-page input {
   align-items: center;
   justify-content: center;
   gap: 1.35rem;
+  /* solo translate: lo squash è sul canvas WebGL (scaleY qui sballava il centro) */
   transform: translateX(-50%);
   opacity: 0;
   visibility: hidden;
@@ -263,7 +253,7 @@ body.edges-page input {
   text-underline-offset: 0.18em;
   white-space: nowrap;
   cursor: pointer;
-  transform: translateX(-50%);
+  transform: translateX(-50%) scaleY(var(--seq-squash-y));
   mix-blend-mode: difference;
   opacity: 0;
   visibility: hidden;
@@ -311,6 +301,7 @@ body.edges-page input {
   justify-content: center;
   gap: 0.35em;
   white-space: nowrap;
+  transform: scaleY(var(--seq-squash-y));
 }
 
 #peak-title .peak-line span {

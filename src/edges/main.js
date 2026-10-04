@@ -92,6 +92,8 @@ const REW_SPEEDS = [1, 2, 3, 5];
 const FF_SPEEDS = [1, 2, 3, 4, 5];
 /** ×1 già “accelerato” rispetto allo scroll (verso cima / darkness). */
 const PLAY_SEQ_PER_SEC = 2.2;
+/** Rewind in landing: intro 0→2 (aperta → chiusa → zoom). */
+const PLAY_INTRO_PER_SEC = 1.05;
 
 let ready = false;
 let needsRender = true;
@@ -147,6 +149,8 @@ async function applyPreviewJump() {
   const jumpSeq = async (seq) => {
     await exp.enterSequence();
     exp.setSeq(seq);
+    syncMode();
+    kick();
   };
 
   if (at === 'end') {
@@ -240,31 +244,46 @@ function syncMetaWithOrari() {
 }
 
 /**
- * Dopo la prima immagine (titolo sparito): altitudine sx / luce dx
- * compaiono insieme al secondo elemento (seq 0→1).
- * Quote sul range percorso 2065→2717; allo sfondo finale luce = 100%.
+ * Altitudine sx / luce dx: legate alla media in primo piano.
+ * Compaiono col 2° elemento; con l’extract della media corrente
+ * sfumano insieme a lei (non restano / non saltano a quella dopo).
+ * Peak: luce 100%; quote sul range 2065→2717.
  */
 function syncSeqMetrics() {
   if (!hudEle && !hudLight) return;
 
   let opacity = 0;
+  let darkerHud = false;
   if (exp.getMode() === 'sequence') {
     const seq = exp.getSeq();
     const n = Math.max(timeline.length, 1);
-    // seq arriva a n sull’end slide (meshes = timeline + end)
+    // meshes = timeline + end; seq in [i, i+1) = media i in extract
     const progress = Math.min(1, Math.max(0, seq / n));
-    const item = exp.getItem();
-    const onEnd = item?.kind === 'end' || progress >= 1 - 1e-4;
+    const onEnd = seq >= n - 1e-4;
 
-    // compare mentre la prima si dissolve; resta visibile anche sul finale
-    opacity = onEnd ? 1 : Math.min(1, Math.max(0, seq));
+    let dataIdx = 0;
+    if (seq < 1) {
+      // compare della 1ª: compare la luce della 2ª
+      opacity = Math.min(1, Math.max(0, seq));
+      dataIdx = Math.min(1, n - 1);
+    } else if (onEnd) {
+      // peak / dopo l’ultima foto-video: luce 100%, segue extract della mucca
+      const local = Math.max(0, seq - n);
+      opacity = local <= 1e-4 ? 1 : Math.max(0, 1 - local);
+      dataIdx = n - 1;
+    } else {
+      // media i: piena a local=0, extract → opacity 1→0 (stesso cutoff)
+      const i = Math.min(Math.floor(seq), n - 1);
+      const local = seq - i;
+      opacity = local <= 1e-4 ? 1 : Math.max(0, 1 - local);
+      dataIdx = i;
+    }
 
-    const idx = exp.getSeqIndex();
-    const dataIdx = seq < 1 ? 1 : Math.min(idx, n - 1);
-    const dataItem = timeline[dataIdx] || item;
-    const metrics = metricsForItem(dataItem, timeline);
+    darkerHud = dataIdx >= 1 && dataIdx <= 3;
 
-    if (opacity > 0) {
+    if (opacity > 0.02) {
+      const dataItem = timeline[dataIdx];
+      const metrics = metricsForItem(dataItem, timeline);
       const ele = onEnd
         ? ELE_MAX
         : ELE_MIN + (ELE_MAX - ELE_MIN) * progress;
@@ -273,11 +292,6 @@ function syncSeqMetrics() {
       if (hudLight) hudLight.textContent = formatLight(light);
     }
   }
-
-  // indici 1–3 = 2ª/3ª/4ª media della sequenza
-  const seqIdx =
-    exp.getMode() === 'sequence' ? Math.floor(exp.getSeq()) : -1;
-  const darkerHud = seqIdx >= 1 && seqIdx <= 3;
 
   for (const el of [hudEle, hudLight]) {
     if (!el) continue;
@@ -411,40 +425,62 @@ function onToggleClick() {
 }
 
 function tickPlayback(now) {
-  if (!playback.playing || exp.getMode() !== 'sequence') return false;
+  if (!playback.playing) return false;
   if (!playback.lastTs) playback.lastTs = now;
   const dt = Math.min(0.05, Math.max(0, (now - playback.lastTs) / 1000));
   playback.lastTs = now;
-  const delta = playback.dir * playback.speed * PLAY_SEQ_PER_SEC * dt;
-  const before = exp.getSeq();
-  exp.addSeq(delta);
-  let after = exp.getSeq();
 
-  // avanti: si ferma sulla peak (mucca), non oltre
-  if (playback.dir > 0 && after >= exp.count - 1e-4) {
-    exp.setSeq(exp.count);
-    stopPlayback();
-    return false;
+  if (exp.getMode() === 'sequence') {
+    const delta = playback.dir * playback.speed * PLAY_SEQ_PER_SEC * dt;
+    const before = exp.getSeq();
+    exp.addSeq(delta);
+    const after = exp.getSeq();
+
+    // avanti: si ferma sulla peak (mucca), non oltre
+    if (playback.dir > 0 && after >= exp.count - 1e-4) {
+      exp.setSeq(exp.count);
+      stopPlayback();
+      return false;
+    }
+    // indietro: dalla 1ª media continua sulla landing fino alla vista iniziale
+    if (playback.dir < 0 && after <= 0.001) {
+      exp.exitToIntro(1.85);
+      syncMode();
+      return true;
+    }
+    if (Math.abs(after - before) < 1e-6) {
+      stopPlayback();
+      return false;
+    }
+    return true;
   }
-  // indietro: si ferma all’inizio sequenza (verso darkness)
-  if (playback.dir < 0 && after <= 0.001) {
-    exp.setSeq(0);
-    stopPlayback();
-    return false;
+
+  // landing: rewind fino alla raggiera aperta (prima vista)
+  if (exp.getMode() === 'intro' && playback.dir < 0) {
+    const delta = playback.dir * playback.speed * PLAY_INTRO_PER_SEC * dt;
+    const before = exp.getIntro();
+    exp.addIntro(delta);
+    const after = exp.getIntro();
+    syncMode();
+    if (after <= 0.001) {
+      exp.setIntro(0);
+      stopPlayback();
+      syncMode();
+      return false;
+    }
+    return Math.abs(after - before) >= 1e-6;
   }
-  if (Math.abs(after - before) < 1e-6) {
-    stopPlayback();
-    return false;
-  }
-  return true;
+
+  stopPlayback();
+  return false;
 }
 
-/** Pagina bianca dopo la peak → torna alla landing. */
+/** Pie’ di pagina dopo la peak → torna alla landing. */
 function syncBackButton() {
   if (!btnBackDarkness) return;
-  // hit DOM; disegno WebGL con extract della mucca
+  // DOM visibile (difference + GT Cinetype regular, stessa size degli HUD)
   const hit = exp.isBackHitActive?.() ?? false;
-  btnBackDarkness.classList.add('is-hit-only');
+  btnBackDarkness.classList.remove('is-hit-only');
   btnBackDarkness.classList.toggle('is-visible', hit);
   btnBackDarkness.setAttribute('aria-hidden', hit ? 'false' : 'true');
 }

@@ -14,7 +14,7 @@ dist/
 assets-data.json
 .cache/
 
-# Media (large binary assets — keep locally, not on GitHub)
+# Media: track only images/bianco_nero + videos for GitHub Pages
 *.jpg
 *.jpeg
 *.png
@@ -30,6 +30,10 @@ assets-data.json
 *.mpeg
 *.avi
 *.webm
+assets/images/**
+!assets/images/bianco_nero/
+!assets/images/bianco_nero/**
+!assets/videos/**
 
 # Spreadsheets & documents
 *.xlsx
@@ -38,9 +42,6 @@ assets-data.json
 *.pdf
 *.PDF
 
-# Optional: ignore whole media folders as a belt-and-suspenders
-assets/images/
-assets/videos/
 assets/scanners/
 assets/data/**/*.xlsx
 dati_foto.xlsx

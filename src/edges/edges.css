@@ -4,39 +4,16 @@
   box-sizing: border-box;
 }
 
-@font-face {
-  font-family: 'GT Cinetype';
-  src:
-    local('GT Cinetype Light'),
-    local('GTCinetype-Light'),
-    local('GT-Cinetype-Light-Trial'),
-    url('/assets/fonts/GT-Cinetype-Light.otf') format('opentype');
-  font-weight: 300;
-  font-style: normal;
-  font-display: swap;
-}
-
-/* Regular: se non c’è il file, usa Light come base (in repo solo Light + Bold) */
+/* Tutte le scritte: GT Cinetype Regular (qualsiasi weight richiesto → Regular) */
 @font-face {
   font-family: 'GT Cinetype';
   src:
     local('GT Cinetype Regular'),
     local('GTCinetype-Regular'),
-    local('GT Cinetype'),
-    url('/assets/fonts/GT-Cinetype-Light.otf') format('opentype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'GT Cinetype';
-  src:
-    local('GT Cinetype Bold'),
-    local('GTCinetype-Bold'),
-    local('GT-Cinetype-Bold-Trial'),
-    url('/assets/fonts/GT-Cinetype-Bold.otf') format('opentype');
-  font-weight: 700;
+    local('GT Cinetype Regular Trial'),
+    local('GT-Cinetype-Regular-Trial'),
+    url('/assets/fonts/GT-Cinetype-Regular.otf') format('opentype');
+  font-weight: 100 900;
   font-style: normal;
   font-display: swap;
 }
@@ -49,8 +26,21 @@ body.edges-page {
   overflow: hidden;
   background: #000;
   color: #fff;
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
+  font-weight: 400;
   -webkit-font-smoothing: antialiased;
+  /* sequenza: dati / frasi / transport — stessa misura */
+  --seq-hud-size: 0.85rem;
+  --seq-hud-weight: 400;
+  --seq-hud-tracking: 0.06em;
+  --seq-hud-line: 1.2;
+}
+
+body.edges-page,
+body.edges-page button,
+body.edges-page input {
+  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
+  font-weight: 400;
 }
 
 #c {
@@ -62,7 +52,7 @@ body.edges-page {
   touch-action: none;
 }
 
-/* tipografia come gli orari della raggiera (GT Cinetype Bold, piccoli) */
+/* tipografia come gli orari della raggiera (GT Cinetype, piccoli) */
 #meta-date,
 #meta-place {
   position: fixed;
@@ -71,10 +61,10 @@ body.edges-page {
   pointer-events: none;
   color: #fff;
   font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
-  font-weight: 700;
-  font-size: clamp(0.55rem, 1.35vw, 0.7rem);
-  letter-spacing: 0.06em;
-  line-height: 1.2;
+  font-weight: 400;
+  font-size: var(--seq-hud-size);
+  letter-spacing: var(--seq-hud-tracking);
+  line-height: var(--seq-hud-line);
   white-space: nowrap;
   text-align: center;
   text-transform: lowercase;
@@ -103,16 +93,18 @@ body.edges-page {
   border: 0;
   color: #fff;
   font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
-  font-weight: 700;
-  font-size: 0.85rem;
+  font-weight: var(--seq-hud-weight);
+  font-size: var(--seq-hud-size);
   font-style: normal;
-  letter-spacing: 0.06em;
-  line-height: 1.2;
+  letter-spacing: var(--seq-hud-tracking);
+  line-height: var(--seq-hud-line);
   white-space: nowrap;
+  text-transform: lowercase;
   mix-blend-mode: difference;
   opacity: 0;
   visibility: hidden;
   transform: translateY(-50%);
+  /* no transition: opacità allineata frame-by-frame all’extract */
 }
 
 /* slide 2–4: source più scuro → dopo difference il testo si legge meglio */
@@ -129,21 +121,37 @@ body.edges-page {
   text-align: right;
 }
 
-#hud-keepgoing,
+#hud-keepgoing {
+  left: 50%;
+  text-align: center;
+  transform: translate(-50%, -50%);
+  mix-blend-mode: difference;
+  /* template tipografico per il canvas WebGL — stessa size dei dati */
+  font-size: var(--seq-hud-size);
+  font-weight: var(--seq-hud-weight);
+  letter-spacing: var(--seq-hud-tracking);
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
+/* worth-it: difference CSS sul framebuffer (leggibile su chiaro/scuro) */
 #hud-worthit {
   left: 50%;
   text-align: center;
   transform: translate(-50%, -50%);
   mix-blend-mode: difference;
-  /* template tipografico per il canvas WebGL (non visibile in DOM) */
-  font-size: 0.95rem;
-  opacity: 0 !important;
-  visibility: hidden !important;
+  color: #fff;
+  font-size: var(--seq-hud-size);
+  font-weight: var(--seq-hud-weight);
+  letter-spacing: var(--seq-hud-tracking);
+  opacity: 0;
+  visibility: hidden;
+  /* no transition: l’opacità segue frame-by-frame l’extract */
 }
 
-#hud-worthit {
-  font-size: 1.15rem;
-  letter-spacing: 0.07em;
+#hud-worthit.is-live {
+  opacity: 1;
+  visibility: visible;
 }
 
 /* transport: dal 2° file fino al media prima della peak — stesso look dei dati HUD */
@@ -178,10 +186,10 @@ body.edges-page {
   background: transparent;
   color: transparent;
   font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
-  font-weight: 700;
-  font-size: 0.85rem;
-  letter-spacing: 0.06em;
-  line-height: 1.2;
+  font-weight: var(--seq-hud-weight);
+  font-size: var(--seq-hud-size);
+  letter-spacing: var(--seq-hud-tracking);
+  line-height: var(--seq-hud-line);
   text-transform: lowercase;
   white-space: nowrap;
   cursor: pointer;
@@ -195,50 +203,56 @@ body.edges-page {
   background: transparent;
   color: #fff;
   font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
-  font-weight: 700;
-  font-size: 0.85rem;
-  letter-spacing: 0.06em;
+  font-weight: var(--seq-hud-weight);
+  font-size: var(--seq-hud-size);
+  letter-spacing: var(--seq-hud-tracking);
+  line-height: var(--seq-hud-line);
+  text-transform: lowercase;
   cursor: pointer;
   mix-blend-mode: difference;
 }
 
-/* hit-area; disegno WebGL (extract + testo scuro sottolineato) */
+#seq-toggle {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+/* pie’ di pagina — GT Cinetype Regular, stessa misura degli altri testi */
 #btn-back-darkness {
   position: fixed;
   left: 50%;
-  top: 50%;
+  top: auto;
+  bottom: 1.15rem;
   z-index: 12;
   margin: 0;
-  padding: 0.5rem 0.75rem;
+  padding: 0.35rem 0.5rem;
   border: 0;
   background: transparent;
-  color: #000;
+  color: #fff;
   font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
-  font-weight: 700;
-  font-size: 0.95rem;
-  letter-spacing: 0.06em;
-  line-height: 1.2;
+  font-weight: 400;
+  font-size: var(--seq-hud-size);
+  font-style: normal;
+  letter-spacing: var(--seq-hud-tracking);
+  line-height: var(--seq-hud-line);
   text-align: center;
   text-transform: lowercase;
   text-decoration: underline;
   text-underline-offset: 0.18em;
   white-space: nowrap;
   cursor: pointer;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
+  mix-blend-mode: difference;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
 }
 
 #btn-back-darkness.is-visible {
+  opacity: 1;
   visibility: visible;
   pointer-events: auto;
-}
-
-#btn-back-darkness.is-hit-only {
-  color: transparent;
-  text-decoration-color: transparent;
-  opacity: 0;
 }
 
 #peak-title {
@@ -292,7 +306,9 @@ body.edges-page {
   position: absolute;
   top: 1.25rem;
   left: 1.25rem;
+  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
   font-size: 0.75rem;
+  font-weight: 400;
   letter-spacing: 0.08em;
 }
 
@@ -301,7 +317,9 @@ body.edges-page {
   top: 1.25rem;
   right: 1.25rem;
   text-align: right;
+  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
   font-size: 0.75rem;
+  font-weight: 400;
   letter-spacing: 0.06em;
   display: flex;
   flex-direction: column;
@@ -344,19 +362,24 @@ body.edges-page {
 }
 
 .clock-title {
+  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
   font-size: clamp(1.1rem, 3vw, 1.6rem);
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .clock-sub {
   margin-top: 0.45rem;
+  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
   font-size: 0.65rem;
+  font-weight: 400;
   opacity: 0.55;
 }
 
 .clock-cta {
   margin-top: 0.85rem;
+  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
   font-size: 0.7rem;
+  font-weight: 400;
   letter-spacing: 0.14em;
   opacity: 0.75;
   transform: translateY(2px);
@@ -379,7 +402,9 @@ body.is-landing .clock-center.is-dimmed {
   left: 1.25rem;
   color: #fff;
   text-decoration: none;
+  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
   font-size: 0.75rem;
+  font-weight: 400;
   letter-spacing: 0.08em;
   pointer-events: auto;
 }
@@ -396,7 +421,9 @@ body.is-landing .clock-center.is-dimmed {
   place-items: center;
   background: #000;
   color: #fff;
+  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
   font-size: 0.8rem;
+  font-weight: 400;
   letter-spacing: 0.1em;
   transition: opacity 0.4s ease, visibility 0.4s ease;
 }

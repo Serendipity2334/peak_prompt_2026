@@ -105,12 +105,17 @@ function makeEdgeMaterial(tex, item) {
     fragmentShader: edgeFrag,
     uniforms: {
       uMap: { value: tex },
+      uMapHi: { value: tex },
+      uDetailMix: { value: 0 },
       uCutoff: { value: 1 },
       uLight: { value: Number(item.light) || 0 },
       uShadow: { value: Number(item.shadow) || 0 },
       uCover: { value: 0 },
       uOpacity: { value: 1 },
       uGrain: { value: 0 },
+      uUseAlpha: { value: 0 },
+      uRedOnly: { value: 0 },
+      uEdgeAmt: { value: 1 },
       uResolution: { value: new THREE.Vector2(1, 1) },
       uImageSize: { value: new THREE.Vector2(w, h) }
     },

@@ -9,29 +9,34 @@ const Z_GAP = 0.02;
  * Back to darkness: compare nei buchi extract della mucca, poi pieno sul bianco.
  * Testo scuro (leggibile sul bianco).
  */
-/** uFit 0 = cover, 1 = contain (peak ritagliata intera nel viewport). */
+/** uFit 0 = cover, 1 = contain. uFitOffsetY = mesh.y / viewH. */
 const FIT_UV_GLSL = /* glsl */ `
 uniform float uFit;
+uniform float uFitOffsetY;
 vec2 fitUV(vec2 uv, vec2 res, vec2 img) {
+  vec2 src = vec2(uv.x, uv.y - uFitOffsetY);
   float sA = res.x / max(res.y, 1.0);
   float iA = img.x / max(img.y, 1.0);
-  vec2 outUv = uv;
+  vec2 outUv = src;
   if (uFit > 0.5) {
     if (sA > iA) {
-      outUv.x = 0.5 + (uv.x - 0.5) * (sA / iA);
+      outUv.x = 0.5 + (src.x - 0.5) * (sA / iA);
     } else {
-      outUv.y = 0.5 + (uv.y - 0.5) * (iA / sA);
+      outUv.y = 0.5 + (src.y - 0.5) * (iA / sA);
     }
   } else {
     if (sA > iA) {
-      outUv.y = 0.5 + (uv.y - 0.5) * (iA / sA);
+      outUv.y = 0.5 + (src.y - 0.5) * (iA / sA);
     } else {
-      outUv.x = 0.5 + (uv.x - 0.5) * (sA / iA);
+      outUv.x = 0.5 + (src.x - 0.5) * (sA / iA);
     }
   }
   return outUv;
 }
 `;
+
+/** UV Y della mucca nel frame (0 basso → 1 alto): la portiamo al centro pagina. */
+const END_COW_UV_Y = 0.72;
 
 const backFollowFrag = /* glsl */ `
 uniform sampler2D uTitle;
@@ -83,7 +88,7 @@ void main() {
 
 /**
  * Worth-it finale: extract + difference (come keep-going).
- * Su aree rosse/scure alza la luminanza così resta chiaro e leggibile.
+ * Difference sulla luma B/N (come a schermo); contrasto minimo garantito.
  */
 const worthFollowFrag = /* glsl */ `
 uniform sampler2D uTitle;
@@ -119,28 +124,30 @@ void main() {
     }
   }
 
-  vec3 photo = mix(
-    texture2D(uMap, puv).rgb,
-    texture2D(uMapHi, puv).rgb,
+  vec4 photo4 = mix(
+    texture2D(uMap, puv),
+    texture2D(uMapHi, puv),
     clamp(uDetailMix, 0.0, 1.0)
   );
-  float L = dot(photo, vec3(0.2126, 0.7152, 0.0722));
+  // solo sulla mucca/monte (niente testo nei buchi / sul bianco)
+  if (photo4.a < 0.08) discard;
+
+  float L = dot(photo4.rgb, vec3(0.2126, 0.7152, 0.0722));
   if (L < (1.0 - uCutoff)) discard;
 
   vec4 t = texture2D(uTitle, vUv);
   if (t.a < 0.05) discard;
 
-  // difference (source chiaro) + pavimento di luminanza alto → leggibile su rosso
-  vec3 diff = abs(t.rgb - photo);
-  diff = pow(max(diff, vec3(0.001)), vec3(0.55));
+  // difference sul B/N (allineato a ciò che si vede); = invert se titolo bianco
+  vec3 base = vec3(L);
+  vec3 diff = abs(t.rgb - base);
   float Ld = dot(diff, vec3(0.2126, 0.7152, 0.0722));
-  float redish = clamp(photo.r - 0.4 * (photo.g + photo.b), 0.0, 1.0);
-  // quasi bianco su zone scure/rosse; resta difference solo se già chiara
-  float lift = max(smoothstep(0.7, 0.25, Ld), 0.55 + 0.45 * redish);
-  diff = mix(diff, vec3(1.0), lift);
-  diff = max(diff, vec3(0.82));
-
-  gl_FragColor = vec4(clamp(diff, 0.0, 1.0), t.a);
+  // se il risultato è troppo vicino allo sfondo, spingi all’opposto
+  float sep = abs(Ld - L);
+  float fix = 1.0 - smoothstep(0.35, 0.62, sep);
+  vec3 ink = mix(vec3(1.0), vec3(0.0), step(0.5, L));
+  diff = mix(diff, ink, fix);
+  gl_FragColor = vec4(diff, t.a);
 }
 `;
 
@@ -369,6 +376,23 @@ function prepTex(texture) {
   return texture;
 }
 
+/** Tipografia sequenza: stessa di .hud-data (GT Cinetype regular, --seq-hud-size). */
+function applySeqHudFont(ctx, probeId = 'hud-ele') {
+  const probe = document.getElementById(probeId);
+  const cs = probe ? getComputedStyle(probe) : null;
+  if (cs?.fontSize) {
+    ctx.font = `400 ${cs.fontSize} "GT Cinetype", "GTCinetype", sans-serif`;
+    if ('letterSpacing' in ctx) {
+      ctx.letterSpacing = cs.letterSpacing || '0px';
+    }
+    return;
+  }
+  const rem =
+    parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  ctx.font = `400 ${0.85 * rem}px "GT Cinetype", "GTCinetype", sans-serif`;
+  if ('letterSpacing' in ctx) ctx.letterSpacing = `${0.06 * rem}px`;
+}
+
 function downscaleTexture(texture, maxW = MAX_TEX_W) {
   const img = texture.image;
   if (!img?.width || img.width <= maxW) return prepTex(texture);
@@ -422,7 +446,7 @@ function makeTimeLabel(text) {
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = 'rgba(255,255,255,0.92)';
-  ctx.font = '700 36px "GT Cinetype", "GTCinetype", sans-serif';
+  ctx.font = '400 42px "GT Cinetype", "GTCinetype", sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, w / 2, h / 2);
@@ -633,6 +657,7 @@ export function createExperience(canvas) {
         uGrain: { value: 0 },
         uUseAlpha: { value: 0 },
         uRedOnly: { value: 0 },
+        uEdgeAmt: { value: 1 },
         uResolution: {
           value: new THREE.Vector2(window.innerWidth, window.innerHeight)
         },
@@ -646,24 +671,27 @@ export function createExperience(canvas) {
     });
   }
 
-  /** Ultimo layer: PNG ritagliato; B/N + edge soft (meno rosso del 100% light pieno). */
+  /** Ultimo layer: PNG scontornata (solo monte + mucca) + stesso edge delle altre. */
   async function makeEndMesh(index) {
-    const url = '/assets/images/end_peak.png?v=4';
+    const url = '/assets/images/8faed4018ee32232e14d4d1b7542b1dc.png?v=8';
     const tex = prepTex(await loadTexture(loader, url));
+    tex.premultiplyAlpha = false;
     const img = tex.image;
     const iw = img.width || 1;
     const ih = img.height || 1;
-    // tone bilanciato → accenti blu/rosso radi, corpo in B/N
-    const mat = makeShaderMat(tex, { light: 0.35, shadow: 0.35 });
+    // light/shadow come le altre foto → stesso rosa/magenta dello screenshot
+    const item = { kind: 'end', time: '', light: 0.57, shadow: 0.43 };
+    const mat = makeShaderMat(tex, item);
     mat.uniforms.uDetailMix.value = 1;
     mat.uniforms.uMapHi.value = tex;
+    mat.uniforms.uEdgeAmt.value = 1;
     mat.uniforms.uUseAlpha.value = 1;
     mat.uniforms.uRedOnly.value = 0;
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
     mesh.userData.kind = 'end';
     mesh.userData.isEndSlide = true;
     mesh.userData.index = index;
-    mesh.userData.item = { kind: 'end', time: '', light: 1, shadow: 0 };
+    mesh.userData.item = item;
     mesh.userData.video = null;
     mesh.userData.texture = tex;
     mesh.userData.thumbTex = tex;
@@ -871,6 +899,7 @@ export function createExperience(canvas) {
     if (titleMesh) titleMesh.visible = false;
     if (keepMesh) keepMesh.visible = false;
     if (worthMesh) worthMesh.visible = false;
+    syncWorthItDom(false);
     if (backMesh) backMesh.visible = false;
     backHitActive = false;
     if (transportMesh) transportMesh.visible = false;
@@ -883,7 +912,7 @@ export function createExperience(canvas) {
       ensureFull(1);
     }
 
-    // g 0→1: chiusura a ventaglio verso le 12 (niente spin).
+    // g 0→1: chiusura a ventaglio verso le 12 (già aperta all’inizio).
     // Elemento 0 resta fermo sulle 12; gli altri chiudono su di lui.
     // m 0→1: lo 0 slitta al centro e scala a cover.
     const g = easeInOut(Math.min(Math.max(intro, 0), 1));
@@ -982,7 +1011,7 @@ export function createExperience(canvas) {
     if (!list.length) return;
 
     try {
-      await document.fonts.load('700 36px "GT Cinetype"');
+      await document.fonts.load('400 42px "GT Cinetype"');
       await document.fonts.ready;
     } catch {
       /* fallback: canvas userà il sans di sistema */
@@ -1016,7 +1045,7 @@ export function createExperience(canvas) {
   function layoutClockFace(m) {
     if (!clockGroup) return;
     const short = Math.min(halfW, halfH);
-    const labelW = short * 0.28;
+    const labelW = short * 0.32;
     // appena fuori dalla raggiera delle tile
     const sample = sizeWithAspect(short * 0.25, 1.2);
     const tileOut = Math.hypot(sample.w, sample.h) * 0.5;
@@ -1096,7 +1125,7 @@ export function createExperience(canvas) {
     const line = document.querySelector('#peak-title .peak-line');
     if (spans.length && line) {
       const cs = getComputedStyle(line);
-      ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      ctx.font = `400 ${cs.fontSize} "GT Cinetype", "GTCinetype", sans-serif`;
       if ('letterSpacing' in ctx) ctx.letterSpacing = cs.letterSpacing || '0px';
       // posizioni X prima del marker (il marker non deve spostare le parole)
       const xs = Array.from(spans, (span) => span.getBoundingClientRect().left);
@@ -1224,16 +1253,7 @@ export function createExperience(canvas) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
 
-    const el = document.getElementById('hud-keepgoing');
-    const cs = el ? getComputedStyle(el) : null;
-    const font =
-      cs?.font ||
-      '700 0.95rem "GT Cinetype", "GTCinetype", sans-serif';
-    ctx.font = font;
-    // forza px numerici se il browser lascia "0.95rem" in font shorthand
-    if (cs) {
-      ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-    }
+    applySeqHudFont(ctx, 'hud-keepgoing');
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -1243,7 +1263,7 @@ export function createExperience(canvas) {
   async function buildKeepGoingOverlay() {
     disposeKeepGoingOverlay();
     try {
-      await document.fonts.load('700 16px "GT Cinetype"');
+      await document.fonts.load('400 16px "GT Cinetype"');
       await document.fonts.ready;
     } catch {
       /* ignore */
@@ -1391,24 +1411,25 @@ export function createExperience(canvas) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
 
-    const el = document.getElementById('hud-worthit');
-    const cs = el ? getComputedStyle(el) : null;
-    if (cs) {
-      ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-      if ('letterSpacing' in ctx) ctx.letterSpacing = cs.letterSpacing || '0px';
-    } else {
-      ctx.font = '700 0.95rem "GT Cinetype", "GTCinetype", sans-serif';
-    }
-    ctx.fillStyle = '#ffffff';
+    applySeqHudFont(ctx, 'hud-worthit');
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(WORTH_IT_TEXT, cssW * 0.5, cssH * 0.5);
+    const x = cssW * 0.5;
+    const y = cssH * 0.5;
+    // alone bianco: sotto difference resta l’invert leggibile su chiaro/scuro
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.15;
+    ctx.strokeText(WORTH_IT_TEXT, x, y);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(WORTH_IT_TEXT, x, y);
   }
 
   async function buildWorthItOverlay() {
     disposeWorthItOverlay();
     try {
-      await document.fonts.load('700 16px "GT Cinetype"');
+      await document.fonts.load('400 16px "GT Cinetype"');
       await document.fonts.ready;
     } catch {
       /* ignore */
@@ -1438,7 +1459,8 @@ export function createExperience(canvas) {
         },
         uImageSize: { value: new THREE.Vector2(1, 1) },
         uPrevSize: { value: new THREE.Vector2(1, 1) },
-        uFit: { value: 1 }
+        uFit: { value: 1 },
+        uFitOffsetY: { value: 0 }
       },
       transparent: true,
       depthTest: false,
@@ -1453,73 +1475,31 @@ export function createExperience(canvas) {
     scene.add(worthMesh);
   }
 
+  /** Worth-it DOM: true mix-blend-mode:difference sul canvas. */
+  function syncWorthItDom(live, opacity = 1) {
+    const el = document.getElementById('hud-worthit');
+    if (!el) return;
+    el.classList.toggle('is-live', live);
+    el.style.opacity = live ? String(opacity) : '';
+    el.setAttribute('aria-hidden', live ? 'false' : 'true');
+  }
+
   /**
-   * “it was worth it”: compare con extract sulla peak, scompare
-   * con l’extract della mucca (non resta sul bianco).
+   * “it was worth it”: difference CSS; resta fino alla fine (anche sul bianco).
    */
   function layoutWorthItOverlay() {
-    if (!worthMesh || worthItIndex < 0 || mode !== 'sequence') {
-      if (worthMesh) worthMesh.visible = false;
+    if (worthMesh) worthMesh.visible = false;
+
+    if (worthItIndex < 0 || mode !== 'sequence') {
+      syncWorthItDom(false);
       return;
     }
 
     const i0 = worthItIndex;
     const p = seq;
-    // fuori dalla finestra peak (reveal → extract)
-    if (p <= i0 - 1 || p >= i0 + 1) {
-      worthMesh.visible = false;
-      return;
-    }
-
-    let cutoff = 1;
-    let usePrev = 0;
-    let prevIdx = -1;
-    let prevCutoff = 0;
-
-    if (p < i0) {
-      // compare nei buchi dell’extract precedente
-      cutoff = 1;
-      usePrev = 1;
-      prevIdx = i0 - 1;
-      prevCutoff = 1 - (p - (i0 - 1));
-    } else {
-      // piena sulla mucca, poi scompare col suo extract
-      cutoff = 1 - (p - i0);
-    }
-
-    const mesh = meshes[i0];
-    if (!mesh) {
-      worthMesh.visible = false;
-      return;
-    }
-
-    const { w: fullW, h: fullH } = viewSize();
-    worthMesh.position.set(0, 0, 0.036);
-    worthMesh.scale.set(fullW, fullH, 1);
-    worthMesh.rotation.set(0, 0, 0);
-
-    const src = mesh.material.uniforms;
-    const mat = worthMesh.material;
-    mat.uniforms.uMap.value = src.uMap.value;
-    mat.uniforms.uMapHi.value = src.uMapHi.value;
-    mat.uniforms.uDetailMix.value = src.uDetailMix.value;
-    mat.uniforms.uCutoff.value = cutoff;
-    mat.uniforms.uImageSize.value.copy(src.uImageSize.value);
-    mat.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
-    mat.uniforms.uUsePrev.value = usePrev;
-    // peak in contain: stesso fit degli overlay
-    mat.uniforms.uFit.value = mesh.userData.isEndSlide ? 1 : 0;
-
-    if (usePrev && prevIdx >= 0 && meshes[prevIdx]) {
-      const prev = meshes[prevIdx].material.uniforms;
-      mat.uniforms.uPrevMap.value = prev.uMap.value;
-      mat.uniforms.uPrevMapHi.value = prev.uMapHi.value;
-      mat.uniforms.uPrevDetail.value = prev.uDetailMix.value;
-      mat.uniforms.uPrevCutoff.value = prevCutoff;
-      mat.uniforms.uPrevSize.value.copy(prev.uImageSize.value);
-    }
-
-    worthMesh.visible = cutoff > 0.001;
+    // dalla peak in poi, fino a fine sequenza
+    const live = p >= i0 - 0.02;
+    syncWorthItDom(live, 1);
   }
 
   function captureWorthItFromDom() {
@@ -1530,6 +1510,7 @@ export function createExperience(canvas) {
   }
 
   function disposeWorthItOverlay() {
+    syncWorthItDom(false);
     if (worthMesh) {
       scene.remove(worthMesh);
       worthMesh.material.uniforms.uTitle.value?.dispose();
@@ -1555,36 +1536,34 @@ export function createExperience(canvas) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
 
-    const el = document.getElementById('btn-back-darkness');
-    const cs = el ? getComputedStyle(el) : null;
-    if (cs) {
-      ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-      if ('letterSpacing' in ctx) ctx.letterSpacing = cs.letterSpacing || '0px';
-    } else {
-      ctx.font = '700 0.95rem "GT Cinetype", "GTCinetype", sans-serif';
-    }
+    // stesso size/weight degli altri testi HUD; in basso a pie’ di pagina
+    applySeqHudFont(ctx, 'hud-ele');
     ctx.fillStyle = '#050505';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const x = cssW * 0.5;
-    const y = cssH * 0.5;
+    const y = cssH - 1.15 * (
+      parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+    );
     ctx.fillText(BACK_TEXT, x, y);
-    // sottolineatura come il bottone DOM
     const tw = ctx.measureText(BACK_TEXT).width;
-    const rem =
-      parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const probe = document.getElementById('hud-ele');
+    const fs = probe
+      ? parseFloat(getComputedStyle(probe).fontSize)
+      : (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16) *
+        0.85;
     ctx.strokeStyle = '#050505';
-    ctx.lineWidth = Math.max(1, rem * 0.06);
+    ctx.lineWidth = Math.max(1, fs * 0.07);
     ctx.beginPath();
-    ctx.moveTo(x - tw * 0.5, y + rem * 0.55);
-    ctx.lineTo(x + tw * 0.5, y + rem * 0.55);
+    ctx.moveTo(x - tw * 0.5, y + fs * 0.55);
+    ctx.lineTo(x + tw * 0.5, y + fs * 0.55);
     ctx.stroke();
   }
 
   async function buildBackOverlay() {
     disposeBackOverlay();
     try {
-      await document.fonts.load('700 16px "GT Cinetype"');
+      await document.fonts.load('400 16px "GT Cinetype"');
       await document.fonts.ready;
     } catch {
       /* ignore */
@@ -1614,7 +1593,8 @@ export function createExperience(canvas) {
         },
         uImageSize: { value: new THREE.Vector2(1, 1) },
         uPrevSize: { value: new THREE.Vector2(1, 1) },
-        uFit: { value: 1 }
+        uFit: { value: 1 },
+        uFitOffsetY: { value: 0 }
       },
       transparent: true,
       depthTest: false,
@@ -1630,60 +1610,27 @@ export function createExperience(canvas) {
   }
 
   /**
-   * Back to darkness: compare nei buchi extract della mucca,
-   * poi resta pieno sul bianco.
+   * Back to darkness: DOM a pie’ di pagina (stesso font degli HUD).
+   * Visibile da quando la mucca inizia a estrarsi, poi sul bianco.
    */
   function layoutBackOverlay() {
+    if (backMesh) backMesh.visible = false;
     backHitActive = false;
-    if (!backMesh || worthItIndex < 0 || mode !== 'sequence') {
-      if (backMesh) backMesh.visible = false;
-      return;
-    }
+
+    if (worthItIndex < 0 || mode !== 'sequence') return;
 
     const i0 = worthItIndex;
     const p = seq;
-    // solo da quando la mucca inizia a estrarsi in poi
-    if (p < i0) {
-      backMesh.visible = false;
-      return;
-    }
+    // da extract mucca in poi
+    if (p < i0) return;
 
-    let usePrev = 0;
-    let prevCutoff = 0;
     if (p < i0 + 1) {
-      usePrev = 1;
-      prevCutoff = 1 - (p - i0);
-    }
-
-    const mesh = meshes[i0];
-    if (!mesh) {
-      backMesh.visible = false;
+      const prevCutoff = 1 - (p - i0);
+      backHitActive = prevCutoff < 0.92;
       return;
     }
 
-    const { w: fullW, h: fullH } = viewSize();
-    backMesh.position.set(0, 0, 0.038);
-    backMesh.scale.set(fullW, fullH, 1);
-    backMesh.rotation.set(0, 0, 0);
-
-    const src = mesh.material.uniforms;
-    const mat = backMesh.material;
-    mat.uniforms.uMap.value = src.uMap.value;
-    mat.uniforms.uMapHi.value = src.uMapHi.value;
-    mat.uniforms.uDetailMix.value = src.uDetailMix.value;
-    mat.uniforms.uCutoff.value = 1;
-    mat.uniforms.uImageSize.value.copy(src.uImageSize.value);
-    mat.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
-    mat.uniforms.uUsePrev.value = usePrev;
-    mat.uniforms.uFit.value = mesh.userData.isEndSlide ? 1 : 0;
-    mat.uniforms.uPrevMap.value = src.uMap.value;
-    mat.uniforms.uPrevMapHi.value = src.uMapHi.value;
-    mat.uniforms.uPrevDetail.value = src.uDetailMix.value;
-    mat.uniforms.uPrevCutoff.value = prevCutoff;
-    mat.uniforms.uPrevSize.value.copy(src.uImageSize.value);
-
-    backMesh.visible = true;
-    backHitActive = !usePrev || prevCutoff < 0.92;
+    backHitActive = true;
   }
 
   function captureBackFromDom() {
@@ -1720,18 +1667,26 @@ export function createExperience(canvas) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
 
-    // stesso tipografico dei dati HUD (0.85rem Bold)
-    const probe = document.getElementById('hud-ele');
-    const cs = probe ? getComputedStyle(probe) : null;
-    if (cs) {
-      ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-      if ('letterSpacing' in ctx) ctx.letterSpacing = cs.letterSpacing || '0px';
-    } else {
-      ctx.font = '700 0.85rem "GT Cinetype", "GTCinetype", sans-serif';
-    }
-    ctx.fillStyle = transportLabels.color || '#ffffff';
+    // stesso tipografico dei dati / frasi HUD
+    applySeqHudFont(ctx, 'hud-ele');
+    const ink = transportLabels.color || '#ffffff';
+    ctx.fillStyle = ink;
+    ctx.strokeStyle = ink;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    const rem =
+      parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    ctx.lineWidth = Math.max(1, rem * 0.06);
+
+    const paintLabel = (text, x, y, underline) => {
+      ctx.fillText(text, x, y);
+      if (!underline) return;
+      const tw = ctx.measureText(text).width;
+      ctx.beginPath();
+      ctx.moveTo(x - tw * 0.5, y + rem * 0.55);
+      ctx.lineTo(x + tw * 0.5, y + rem * 0.55);
+      ctx.stroke();
+    };
 
     // allinea ai hit-target DOM (#seq-rew / toggle / ff)
     const ids = ['seq-rew', 'seq-toggle', 'seq-ff'];
@@ -1746,25 +1701,26 @@ export function createExperience(canvas) {
       if (!el) continue;
       const r = el.getBoundingClientRect();
       if (r.width < 1 && r.height < 1) continue;
-      ctx.fillText(texts[i], r.left + r.width * 0.5, r.top + r.height * 0.5);
+      const x = r.left + r.width * 0.5;
+      const y = r.top + r.height * 0.5;
+      // play/stop sottolineato (come back to darkness)
+      paintLabel(texts[i], x, y, ids[i] === 'seq-toggle');
       painted = true;
     }
     if (!painted) {
-      const rem =
-        parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
       const y = cssH - 1.15 * rem;
       const gap = Math.min(cssW * 0.12, 96);
       const cx = cssW * 0.5;
-      ctx.fillText(transportLabels.rew, cx - gap, y);
-      ctx.fillText(transportLabels.toggle, cx, y);
-      ctx.fillText(transportLabels.ff, cx + gap, y);
+      paintLabel(transportLabels.rew, cx - gap, y, false);
+      paintLabel(transportLabels.toggle, cx, y, true);
+      paintLabel(transportLabels.ff, cx + gap, y, false);
     }
   }
 
   async function buildTransportOverlay() {
     disposeTransportOverlay();
     try {
-      await document.fonts.load('700 14px "GT Cinetype"');
+      await document.fonts.load('400 14px "GT Cinetype"');
       await document.fonts.ready;
     } catch {
       /* ignore */
@@ -2063,12 +2019,12 @@ export function createExperience(canvas) {
 
     for (let i = 0; i < n; i++) {
       const mesh = meshes[i];
-      const isEnd = mesh.userData.isEndSlide;
-      // peak ritagliata: contain (intera, niente crop); altre slide: cover
-      const fit = isEnd
-        ? containSize(fullW, fullH, meshAspect(mesh))
-        : coverSize(fullW, fullH, meshAspect(mesh));
-      mesh.position.set(0, 0, -i * Z_GAP);
+      // peak inclusa: stessa cover/scala delle altre; solo Y per centrare la mucca
+      const fit = coverSize(fullW, fullH, meshAspect(mesh));
+      const yOff = mesh.userData.isEndSlide
+        ? -(END_COW_UV_Y - 0.5) * fit.h
+        : 0;
+      mesh.position.set(0, yOff, -i * Z_GAP);
       mesh.scale.set(fit.w, fit.h, 1);
       mesh.rotation.z = 0;
       mesh.material.uniforms.uCover.value = 0;

@@ -161,12 +161,12 @@ def update_photos() -> int:
 
 
 def update_videos() -> int:
-    manifest_path = ROOT / ".cache/videos/manifest.json"
+    manifest_path = ROOT / "assets/videos/manifest.json"
     if not manifest_path.is_file():
         return 0
     manifest = json.loads(manifest_path.read_text())
     for v in manifest:
-        tpath = ROOT / ".cache/thumbs" / Path(v["thumb"]).name
+        tpath = ROOT / "assets/thumbs" / Path(v["thumb"]).name
         if not tpath.is_file():
             continue
         st = classify_rgb(load_rgb(tpath))

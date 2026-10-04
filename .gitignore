@@ -10,11 +10,12 @@ dist/
 .idea/
 .vscode/
 
-# Generated
+# Generated / local
 assets-data.json
 .cache/
+assets/videos/.encode
 
-# Media: track only images/bianco_nero + videos for GitHub Pages
+# Media: track bianco_nero, videos (mp4), thumbs — not raw mpg / other dumps
 *.jpg
 *.jpeg
 *.png
@@ -33,7 +34,13 @@ assets-data.json
 assets/images/**
 !assets/images/bianco_nero/
 !assets/images/bianco_nero/**
+!assets/videos/
 !assets/videos/**
+!assets/videos/**/*.mp4
+!assets/videos/manifest.json
+!assets/thumbs/
+!assets/thumbs/**
+!assets/thumbs/**/*.jpg
 
 # Spreadsheets & documents
 *.xlsx

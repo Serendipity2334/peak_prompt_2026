@@ -267,9 +267,8 @@ function syncSeqMetrics() {
       opacity = Math.min(1, Math.max(0, seq));
       dataIdx = Math.min(1, n - 1);
     } else if (onEnd) {
-      // peak / dopo l’ultima foto-video: luce 100%, segue extract della mucca
-      const local = Math.max(0, seq - n);
-      opacity = local <= 1e-4 ? 1 : Math.max(0, 1 - local);
+      // mucca + bianco finale: 2717 m / 100% light restano (non svaniscono)
+      opacity = 1;
       dataIdx = n - 1;
     } else {
       // media i: piena a local=0, extract → opacity 1→0 (stesso cutoff)

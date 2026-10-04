@@ -12,7 +12,7 @@
     local('GTCinetype-Regular'),
     local('GT Cinetype Regular Trial'),
     local('GT-Cinetype-Regular-Trial'),
-    url('/assets/fonts/GT-Cinetype-Regular.otf') format('opentype');
+    url('../../assets/fonts/GT-Cinetype-Regular.otf') format('opentype');
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;
@@ -121,37 +121,59 @@ body.edges-page input {
   text-align: right;
 }
 
-#hud-keepgoing {
+#hud-keepgoing,
+#hud-worthit {
   left: 50%;
+  top: 50%;
   text-align: center;
   transform: translate(-50%, -50%);
-  mix-blend-mode: difference;
-  /* template tipografico per il canvas WebGL — stessa size dei dati */
   font-size: var(--seq-hud-size);
   font-weight: var(--seq-hud-weight);
   letter-spacing: var(--seq-hud-tracking);
+  text-shadow: none;
+}
+
+/* template tipografico per il canvas WebGL keep-going */
+#hud-keepgoing {
+  mix-blend-mode: difference;
+  color: #fff;
   opacity: 0 !important;
   visibility: hidden !important;
 }
 
-/* worth-it: difference CSS sul framebuffer (leggibile su chiaro/scuro) */
+/*
+ * worth-it sulla mucca: stesso nero della slide bianca + alone chiaro
+ * (così resta leggibile come sul bianco, anche sulla roccia scura)
+ */
 #hud-worthit {
-  left: 50%;
-  text-align: center;
-  transform: translate(-50%, -50%);
-  mix-blend-mode: difference;
-  color: #fff;
-  font-size: var(--seq-hud-size);
-  font-weight: var(--seq-hud-weight);
-  letter-spacing: var(--seq-hud-tracking);
+  mix-blend-mode: normal;
+  color: #111;
+  -webkit-text-stroke: 0;
+  text-shadow:
+    0 0 1px #fff,
+    0 0 2px #fff,
+    0 0 0.35em rgba(255, 255, 255, 0.95),
+    0 1px 0 #fff,
+    0 -1px 0 #fff,
+    1px 0 0 #fff,
+    -1px 0 0 #fff,
+    1px 1px 0 #fff,
+    -1px -1px 0 #fff,
+    1px -1px 0 #fff,
+    -1px 1px 0 #fff;
   opacity: 0;
   visibility: hidden;
-  /* no transition: l’opacità segue frame-by-frame l’extract */
+  z-index: 14;
+  /* no transition: l’opacità segue frame-by-frame la reveal della mucca */
 }
 
 #hud-worthit.is-live {
-  opacity: 1;
   visibility: visible;
+}
+
+/* slide bianca: nero pieno, senza alone (già contrasto massimo) */
+#hud-worthit.is-on-light {
+  text-shadow: none;
 }
 
 /* transport: dal 2° file fino al media prima della peak — stesso look dei dati HUD */
@@ -217,7 +239,7 @@ body.edges-page input {
   text-underline-offset: 0.18em;
 }
 
-/* pie’ di pagina — GT Cinetype Regular, stessa misura degli altri testi */
+/* stessa altezza di #meta-place (“passo falzarego…”) */
 #btn-back-darkness {
   position: fixed;
   left: 50%;
@@ -225,7 +247,7 @@ body.edges-page input {
   bottom: 1.15rem;
   z-index: 12;
   margin: 0;
-  padding: 0.35rem 0.5rem;
+  padding: 0;
   border: 0;
   background: transparent;
   color: #fff;

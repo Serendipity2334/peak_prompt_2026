@@ -3,32 +3,34 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Peak Prompt — Falzarego → Lagazuoi</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=VT323&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/src/style.css" />
+  <title>Peak Prompt</title>
+  <link rel="stylesheet" href="/src/edges/edges.css" />
 </head>
-<body>
+<body class="edges-page is-landing">
   <canvas id="c"></canvas>
-
-  <!-- Scroll: intro + 30 foto + vetta -->
-  <div id="scroll-root">
-    <section class="panel" id="intro" data-panel="intro"></section>
-    <!-- slot foto: riempiti da JS in ordine lightRank -->
-    <div id="photo-panels"></div>
-    <section class="panel" id="summit" data-panel="summit"></section>
-  </div>
-
-  <div id="ui">
-    <div class="center-copy" id="center-copy">
-      <h1 id="center-title">PEAK PROMPT</h1>
-      <button type="button" id="cta">Scorri verso la luce ↓</button>
+  <div id="peak-title" aria-hidden="true">
+    <div class="peak-line">
+      <span>reach</span>
+      <span>the</span>
+      <span>light</span>
+      <span>at</span>
+      <span>the</span>
+      <span>peak</span>
     </div>
   </div>
-
-  <div id="boot">caricamento…</div>
-
-  <script type="module" src="/src/main.js"></script>
+  <div id="meta-date" aria-hidden="true"></div>
+  <div id="meta-place" aria-hidden="true"></div>
+  <div id="hud-ele" class="hud-data" aria-hidden="true"></div>
+  <div id="hud-light" class="hud-data" aria-hidden="true"></div>
+  <div id="hud-keepgoing" class="hud-data" aria-hidden="true">keep going, don't give up</div>
+  <div id="hud-worthit" class="hud-data" aria-hidden="true">it was worth it. enjoy the light</div>
+  <div id="seq-transport" aria-hidden="true">
+    <button type="button" id="seq-rew" aria-label="indietro">◀◀ ×1</button>
+    <button type="button" id="seq-toggle" aria-label="play o stop">play</button>
+    <button type="button" id="seq-ff" aria-label="avanti">▶▶ ×1</button>
+  </div>
+  <button type="button" id="btn-back-darkness" aria-hidden="true">back to darkness</button>
+  <div id="boot" aria-hidden="true"></div>
+  <script type="module" src="/src/edges/main.js"></script>
 </body>
 </html>

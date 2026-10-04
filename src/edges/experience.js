@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import edgeVert from './edge.vert.js';
 import edgeFrag from './edge.frag.js';
+import { withBase } from './base.js';
 
 const MAX_TEX_W = 960;
 const Z_GAP = 0.02;
@@ -478,6 +479,7 @@ function loadVideoTexture(src) {
     video.autoplay = true;
     video.loop = true;
     video.muted = true;
+    video.defaultMuted = true;
     video.playsInline = true;
     video.setAttribute('autoplay', '');
     video.setAttribute('loop', '');
@@ -485,10 +487,22 @@ function loadVideoTexture(src) {
     video.setAttribute('playsinline', '');
     video.setAttribute('webkit-playsinline', '');
     video.preload = 'auto';
+    // fuori schermo ma nel DOM: alcuni browser non decodificano altrimenti
+    Object.assign(video.style, {
+      position: 'fixed',
+      width: '1px',
+      height: '1px',
+      opacity: '0',
+      pointerEvents: 'none',
+      left: '-9999px',
+      top: '0'
+    });
+    document.body.appendChild(video);
 
     const onReady = () => {
       video.removeEventListener('loadeddata', onReady);
       video.removeEventListener('error', onError);
+      video.play().catch(() => {});
       const texture = prepTex(new THREE.VideoTexture(video));
       texture.userData.video = video;
       resolve(texture);
@@ -496,6 +510,7 @@ function loadVideoTexture(src) {
     const onError = () => {
       video.removeEventListener('loadeddata', onReady);
       video.removeEventListener('error', onError);
+      video.remove();
       reject(new Error(`video load failed: ${src}`));
     };
 
@@ -673,7 +688,9 @@ export function createExperience(canvas) {
 
   /** Ultimo layer: PNG scontornata (solo monte + mucca) + stesso edge delle altre. */
   async function makeEndMesh(index) {
-    const url = '/assets/images/8faed4018ee32232e14d4d1b7542b1dc.png?v=8';
+    const url = withBase(
+      'assets/images/bianco_nero/8faed4018ee32232e14d4d1b7542b1dc.png?v=9'
+    );
     const tex = prepTex(await loadTexture(loader, url));
     tex.premultiplyAlpha = false;
     const img = tex.image;
@@ -704,7 +721,7 @@ export function createExperience(canvas) {
   }
 
   async function makeMesh(item, index) {
-    const thumbUrl = item.thumb || item.full || `/${item.imageBW}`;
+    const thumbUrl = item.thumb || item.full || withBase(item.imageBW);
     const thumbTex = prepTex(await loadTexture(loader, thumbUrl));
     const img = thumbTex.image;
     const iw = img.width || 1;
@@ -755,18 +772,33 @@ export function createExperience(canvas) {
         let fullTex;
         if (item.kind === 'video') {
           fullTex = await loadVideoTexture(item.full || item.src);
-          // allinea al frame della thumb
-          try {
-            fullTex.userData.video.currentTime = 0.12;
-          } catch {
-            /* ignore */
+          const video = fullTex.userData.video;
+          const active =
+            mode === 'sequence' ? getSeqIndex() : mode === 'intro' ? 0 : -1;
+          const near = Math.abs(index - active) <= 1;
+          // seek solo in prefetch (fuori schermo): in play evita il ritardo
+          if (!near) {
+            try {
+              video.currentTime = 0.12;
+            } catch {
+              /* ignore */
+            }
+            video.pause();
           }
         } else {
           fullTex = downscaleTexture(
-            await loadTexture(loader, item.full || `/${item.imageBW}`)
+            await loadTexture(loader, item.full || withBase(item.imageBW))
           );
         }
         applyFull(mesh, fullTex);
+        if (item.kind === 'video') {
+          const active = mode === 'sequence' ? getSeqIndex() : -1;
+          if (mode === 'sequence' && Math.abs(index - active) <= 1) {
+            setDetail(mesh, 1);
+            fullTex.userData.video?.play().catch(() => {});
+          }
+          syncVideos();
+        }
       } catch (err) {
         console.warn('full load failed', index, err);
         // resta sulla thumb
@@ -820,10 +852,15 @@ export function createExperience(canvas) {
     await buildMorphBg(items);
 
     // fine sequenza → foto peak (non in raggiera; stesso stile extract/grana)
-    const endMesh = await makeEndMesh(n);
-    scene.add(endMesh);
-    meshes.push(endMesh);
-    worthItIndex = n;
+    try {
+      const endMesh = await makeEndMesh(n);
+      scene.add(endMesh);
+      meshes.push(endMesh);
+      worthItIndex = n;
+    } catch (err) {
+      console.warn('[edges] end mesh non caricata', err);
+      worthItIndex = -1;
+    }
 
     // testo “keep going” sull’immagine a ~2401 m
     const ELE_MIN = 2065;
@@ -842,10 +879,22 @@ export function createExperience(canvas) {
     mode = 'intro';
     layout();
 
-    // preload full dei primi (transizione senza stacco)
+    // preload full dei primi + prefetch video in background (no stacco in sequenza)
     ensureFull(0);
     ensureFull(1);
     ensureFull(2);
+    void prefetchVideoFulls();
+  }
+
+  /** Carica i full video in anticipo (2 alla volta) così partono subito in sequenza. */
+  async function prefetchVideoFulls() {
+    const idxs = [];
+    for (let i = 0; i < items.length; i++) {
+      if (items[i]?.kind === 'video') idxs.push(i);
+    }
+    for (let i = 0; i < idxs.length; i += 2) {
+      await Promise.all(idxs.slice(i, i + 2).map((j) => ensureFull(j)));
+    }
   }
 
   function updateDetailMix() {
@@ -1475,17 +1524,18 @@ export function createExperience(canvas) {
     scene.add(worthMesh);
   }
 
-  /** Worth-it DOM: true mix-blend-mode:difference sul canvas. */
-  function syncWorthItDom(live, opacity = 1) {
+  /** Worth-it DOM: visibile dalla mucca in poi. */
+  function syncWorthItDom(live, opacity = 1, onLight = false) {
     const el = document.getElementById('hud-worthit');
     if (!el) return;
     el.classList.toggle('is-live', live);
+    el.classList.toggle('is-on-light', live && onLight);
     el.style.opacity = live ? String(opacity) : '';
     el.setAttribute('aria-hidden', live ? 'false' : 'true');
   }
 
   /**
-   * “it was worth it”: difference CSS; resta fino alla fine (anche sul bianco).
+   * “it was worth it”: compare con la mucca (reveal), resta sul bianco finale.
    */
   function layoutWorthItOverlay() {
     if (worthMesh) worthMesh.visible = false;
@@ -1497,9 +1547,17 @@ export function createExperience(canvas) {
 
     const i0 = worthItIndex;
     const p = seq;
-    // dalla peak in poi, fino a fine sequenza
-    const live = p >= i0 - 0.02;
-    syncWorthItDom(live, 1);
+
+    // nascosto finché non inizia a comparire la mucca
+    if (p <= i0 - 1) {
+      syncWorthItDom(false);
+      return;
+    }
+
+    // fade insieme alla reveal della mucca; poi pieno fino alla fine
+    const opacity = p < i0 ? Math.min(Math.max(p - (i0 - 1), 0), 1) : 1;
+    const onLight = p >= i0 + 1;
+    syncWorthItDom(true, opacity, onLight);
   }
 
   function captureWorthItFromDom() {
@@ -2003,9 +2061,11 @@ export function createExperience(canvas) {
     const p = Math.min(Math.max(seq, 0), max);
     const active = Math.min(Math.floor(p), Math.max(n - 1, 0));
 
-    // lazy full intorno all’attivo (+ keep-going / finale per extract sync)
+    // lazy full intorno all’attivo (+ lookahead video)
     ensureFull(active);
     ensureFull(active + 1);
+    ensureFull(active + 2);
+    ensureFull(active + 3);
     ensureFull(active - 1);
     if (keepGoingIndex >= 0) {
       ensureFull(keepGoingIndex);
@@ -2235,7 +2295,7 @@ export function createExperience(canvas) {
         }
       }
     }
-    if (mode === 'intro') syncVideos();
+    syncVideos();
     renderer.render(scene, camera);
   }
 
@@ -2261,6 +2321,7 @@ export function createExperience(canvas) {
         video.pause();
         video.removeAttribute('src');
         video.load();
+        video.remove();
       }
       const thumb = mesh.userData.thumbTex;
       const hi = mesh.material.uniforms.uMapHi.value;

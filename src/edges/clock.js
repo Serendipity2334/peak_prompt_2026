@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import edgeVert from './edge.vert.js';
 import edgeFrag from './edge.frag.js';
+import { withBase } from './base.js';
 
 const THUMB_W = 280;
 const TILE_W = 0.38;
@@ -195,7 +196,7 @@ export function createClockLanding(canvas) {
             if (item.kind === 'video') {
               tex = await loadVideoFrame(item.src);
             } else {
-              tex = textureFromSource(await loadImage(`/${item.imageBW}`));
+              tex = textureFromSource(await loadImage(withBase(item.imageBW)));
             }
           } catch {
             const c = document.createElement('canvas');

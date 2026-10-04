@@ -7,21 +7,20 @@ import { spawn } from 'node:child_process';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const assetsRoot = path.join(root, 'assets');
-const cacheVideos = path.join(root, '.cache', 'videos');
-const cacheThumbs = path.join(root, '.cache', 'thumbs');
+const assetsVideos = path.join(assetsRoot, 'videos');
+const assetsThumbs = path.join(assetsRoot, 'thumbs');
 const require = createRequire(import.meta.url);
 
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-function listMpg() {
-  const dir = path.join(assetsRoot, 'videos');
-  if (!fs.existsSync(dir)) return [];
+function listMp4() {
+  if (!fs.existsSync(assetsVideos)) return [];
   return fs
-    .readdirSync(dir)
-    .filter((f) => /\.mpg$/i.test(f))
-    .map((f) => path.join(dir, f));
+    .readdirSync(assetsVideos)
+    .filter((f) => /\.mp4$/i.test(f))
+    .map((f) => path.join(assetsVideos, f));
 }
 
 function runFfmpeg(ffmpegPath, args) {
@@ -32,36 +31,13 @@ function runFfmpeg(ffmpegPath, args) {
   });
 }
 
-function convertMpg(file, ffmpegPath) {
-  const id = path.basename(file, path.extname(file));
-  const out = path.join(cacheVideos, `${id}.mp4`);
-  if (fs.existsSync(out) && fs.statSync(out).size > 0) return Promise.resolve(true);
-  return runFfmpeg(ffmpegPath, [
-    '-y',
-    '-i',
-    file,
-    '-an',
-    '-c:v',
-    'libx264',
-    '-preset',
-    'ultrafast',
-    '-crf',
-    '28',
-    '-pix_fmt',
-    'yuv420p',
-    '-movflags',
-    '+faststart',
-    out
-  ]);
-}
-
 function makeThumb(ffmpegPath, input, output, { seek = false } = {}) {
   if (fs.existsSync(output) && fs.statSync(output).size > 0) {
     return Promise.resolve(true);
   }
   ensureDir(path.dirname(output));
   // foto: niente -ss (rompe gli still). video: cerca un frame a 0.12s
-  const args = ['-y'];
+  const args = ['-nostdin', '-y'];
   if (seek) args.push('-ss', '0.12');
   args.push(
     '-i',
@@ -78,7 +54,7 @@ function makeThumb(ffmpegPath, input, output, { seek = false } = {}) {
 }
 
 function loadPrevVideoStats() {
-  const file = path.join(cacheVideos, 'manifest.json');
+  const file = path.join(assetsVideos, 'manifest.json');
   if (!fs.existsSync(file)) return new Map();
   try {
     const prev = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -89,7 +65,9 @@ function loadPrevVideoStats() {
           light: v.light,
           shadow: v.shadow,
           neutral: v.neutral,
-          luma: v.luma
+          luma: v.luma,
+          time: v.time,
+          sortKey: v.sortKey
         }
       ])
     );
@@ -99,26 +77,27 @@ function loadPrevVideoStats() {
 }
 
 function buildManifest() {
-  ensureDir(cacheVideos);
+  ensureDir(assetsVideos);
   const prev = loadPrevVideoStats();
-  const items = listMpg()
+  const items = listMp4()
     .map((file) => {
       const id = path.basename(file, path.extname(file));
       const st = fs.statSync(file);
       const birth = st.birthtime || st.mtime;
-      const hh = String(birth.getHours()).padStart(2, '0');
-      const mm = String(birth.getMinutes()).padStart(2, '0');
-      const ss = String(birth.getSeconds()).padStart(2, '0');
-      const time = `${hh}:${mm}:${ss}`;
-      const sortKey =
-        birth.getHours() * 3600 + birth.getMinutes() * 60 + birth.getSeconds();
       const kept = prev.get(id) || {};
+      const sortKey =
+        kept.sortKey != null
+          ? Number(kept.sortKey)
+          : birth.getHours() * 3600 + birth.getMinutes() * 60 + birth.getSeconds();
+      const time =
+        kept.time ||
+        `${String(birth.getHours()).padStart(2, '0')}:${String(birth.getMinutes()).padStart(2, '0')}:${String(birth.getSeconds()).padStart(2, '0')}`;
       return {
         id,
         kind: 'video',
-        source: `assets/videos/${path.basename(file)}`,
-        src: `/cache/videos/${id}.mp4`,
-        thumb: `/cache/thumbs/video-${id}.jpg`,
+        source: `assets/videos/${id}.mp4`,
+        src: `/assets/videos/${id}.mp4`,
+        thumb: `/assets/thumbs/video-${id}.jpg`,
         time,
         sortKey,
         light: kept.light ?? 0,
@@ -130,7 +109,7 @@ function buildManifest() {
     .sort((a, b) => a.sortKey - b.sortKey || a.id.localeCompare(b.id));
 
   fs.writeFileSync(
-    path.join(cacheVideos, 'manifest.json'),
+    path.join(assetsVideos, 'manifest.json'),
     JSON.stringify(items, null, 2)
   );
   return items;
@@ -149,7 +128,7 @@ function recomputeVideoLight() {
 
 async function prepareThumbs(ffmpegPath) {
   if (!ffmpegPath) return;
-  ensureDir(cacheThumbs);
+  ensureDir(assetsThumbs);
 
   const jobs = [];
 
@@ -160,34 +139,29 @@ async function prepareThumbs(ffmpegPath) {
       if (!/\.jpe?g$/i.test(name)) continue;
       const id = path.basename(name, path.extname(name));
       const input = path.join(bwDir, name);
-      const output = path.join(cacheThumbs, `photo-${id}.jpg`);
+      const output = path.join(assetsThumbs, `photo-${id}.jpg`);
       jobs.push(() => makeThumb(ffmpegPath, input, output, { seek: false }));
     }
   }
 
-  // video (da mp4 in cache)
-  if (fs.existsSync(cacheVideos)) {
-    for (const name of fs.readdirSync(cacheVideos)) {
-      if (!/\.mp4$/i.test(name)) continue;
-      const id = path.basename(name, path.extname(name));
-      const input = path.join(cacheVideos, name);
-      const output = path.join(cacheThumbs, `video-${id}.jpg`);
-      jobs.push(() => makeThumb(ffmpegPath, input, output, { seek: true }));
-    }
+  // video (mp4 in assets/videos)
+  for (const file of listMp4()) {
+    const id = path.basename(file, path.extname(file));
+    const output = path.join(assetsThumbs, `video-${id}.jpg`);
+    jobs.push(() => makeThumb(ffmpegPath, file, output, { seek: true }));
   }
 
-  const missing = jobs.length;
-  if (!missing) return;
+  if (!jobs.length) return;
   console.log(`[thumbs] generazione / verifica thumbs…`);
   for (let i = 0; i < jobs.length; i += 4) {
     await Promise.all(jobs.slice(i, i + 4).map((fn) => fn()));
   }
-  console.log(`[thumbs] pronti in .cache/thumbs`);
+  console.log(`[thumbs] pronti in assets/thumbs`);
 }
 
 async function prepareMedia() {
-  ensureDir(cacheVideos);
-  ensureDir(cacheThumbs);
+  ensureDir(assetsVideos);
+  ensureDir(assetsThumbs);
 
   let ffmpegPath = null;
   try {
@@ -196,35 +170,47 @@ async function prepareMedia() {
     console.warn('[media] ffmpeg-static non trovato');
   }
 
-  const mpgs = listMpg();
-  if (ffmpegPath && mpgs.length) {
-    const missing = mpgs.filter((f) => {
-      const id = path.basename(f, path.extname(f));
-      const out = path.join(cacheVideos, `${id}.mp4`);
-      return !fs.existsSync(out) || fs.statSync(out).size === 0;
-    });
-    if (missing.length) {
-      console.log(`[videos] conversione ${missing.length} MPG → mp4…`);
-      for (let i = 0; i < missing.length; i += 3) {
-        await Promise.all(missing.slice(i, i + 3).map((f) => convertMpg(f, ffmpegPath)));
-      }
-    }
-  }
-
   const manifest = buildManifest();
-  console.log(`[videos] manifest: ${manifest.length} clip`);
+  console.log(`[videos] manifest: ${manifest.length} clip → assets/videos/`);
   await prepareThumbs(ffmpegPath);
   const ok = await recomputeVideoLight();
   if (ok) console.log('[videos] light/shadow ricalcolati dai thumb');
 }
 
-function sendFile(res, file, type) {
+function sendFile(req, res, file, type) {
+  const stat = fs.statSync(file);
+  const size = stat.size;
   res.setHeader('Content-Type', type);
   res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.setHeader('Accept-Ranges', 'bytes');
+
+  const range = req.headers.range;
+  if (range) {
+    const m = /^bytes=(\d*)-(\d*)$/.exec(range);
+    if (m) {
+      const start = m[1] ? Number(m[1]) : 0;
+      const end = m[2] ? Number(m[2]) : size - 1;
+      if (start <= end && start < size) {
+        const from = start;
+        const to = Math.min(end, size - 1);
+        res.statusCode = 206;
+        res.setHeader('Content-Range', `bytes ${from}-${to}/${size}`);
+        res.setHeader('Content-Length', String(to - from + 1));
+        fs.createReadStream(file, { start: from, end: to }).pipe(res);
+        return;
+      }
+    }
+  }
+
+  res.setHeader('Content-Length', String(size));
   fs.createReadStream(file).pipe(res);
 }
 
-/** Serve /assets/* e /cache/* senza toccare assets/ */
+function pathnameOf(url) {
+  return decodeURIComponent((url || '').split('?')[0]);
+}
+
+/** Serve /assets/* (anche sotto base di GitHub Pages). */
 function serveAssets() {
   return {
     name: 'serve-assets',
@@ -233,34 +219,12 @@ function serveAssets() {
 
       server.middlewares.use((req, res, next) => {
         if (!req.url) return next();
+        const pathname = pathnameOf(req.url).replace(/^\/peak_prompt_2026/, '');
 
-        if (req.url.startsWith('/cache/videos/')) {
-          const rel = decodeURIComponent(
-            req.url.split('?')[0].replace(/^\/cache\/videos\//, '')
-          );
-          const file = path.normalize(path.join(cacheVideos, rel));
-          if (!file.startsWith(cacheVideos) || !fs.existsSync(file)) return next();
-          const ext = path.extname(file).toLowerCase();
-          const types = { '.mp4': 'video/mp4', '.json': 'application/json' };
-          if (!types[ext]) return next();
-          sendFile(res, file, types[ext]);
-          return;
-        }
-
-        if (req.url.startsWith('/cache/thumbs/')) {
-          const rel = decodeURIComponent(
-            req.url.split('?')[0].replace(/^\/cache\/thumbs\//, '')
-          );
-          const file = path.normalize(path.join(cacheThumbs, rel));
-          if (!file.startsWith(cacheThumbs) || !fs.existsSync(file)) return next();
-          sendFile(res, file, 'image/jpeg');
-          return;
-        }
-
-        if (!req.url.startsWith('/assets/')) return next();
+        if (!pathname.startsWith('/assets/')) return next();
         if (req.url.includes('?import') || req.url.includes('?url')) return next();
 
-        const rel = decodeURIComponent(req.url.split('?')[0].replace(/^\/assets\//, ''));
+        const rel = pathname.replace(/^\/assets\//, '');
         const file = path.normalize(path.join(assetsRoot, rel));
         if (!file.startsWith(assetsRoot) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
           return next();
@@ -270,21 +234,35 @@ function serveAssets() {
           '.jpg': 'image/jpeg',
           '.jpeg': 'image/jpeg',
           '.png': 'image/png',
+          '.json': 'application/json',
+          '.otf': 'font/otf',
+          '.ttf': 'font/ttf',
+          '.woff': 'font/woff',
+          '.woff2': 'font/woff2',
           '.gpx': 'application/gpx+xml',
           '.xlsx':
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          '.mpg': 'video/mpeg',
-          '.mpeg': 'video/mpeg',
           '.mp4': 'video/mp4'
         };
         if (!types[ext]) return next();
-        sendFile(res, file, types[ext]);
+        sendFile(req, res, file, types[ext]);
       });
+    },
+    async buildStart() {
+      await prepareMedia();
+    },
+    closeBundle() {
+      const dist = path.join(root, 'dist');
+      ensureDir(dist);
+      fs.cpSync(assetsRoot, path.join(dist, 'assets'), { recursive: true });
+      console.log('[build] copiati assets/ (videos mp4 + thumbs) → dist/');
     }
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // GitHub Pages: https://serendipity2334.github.io/peak_prompt_2026/
+  base: command === 'build' ? '/peak_prompt_2026/' : '/',
   publicDir: false,
   plugins: [serveAssets()],
   server: {
@@ -293,12 +271,7 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
-      input: {
-        main: path.join(root, 'index.html'),
-        layers: path.join(root, 'layers.html'),
-        stack: path.join(root, 'stack.html'),
-        edges: path.join(root, 'edges.html')
-      }
+      input: path.join(root, 'index.html')
     }
   }
-});
+}));

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import edgeVert from './edge.vert.js';
 import edgeFrag from './edge.frag.js';
+import { withBase } from './base.js';
 
 const MAX_TEX_W = 960;
 const Z_GAP = 0.02;
@@ -114,7 +115,7 @@ export function createEdgesScene(canvas) {
     if (item.kind === 'video') {
       tex = await loadVideoTexture(item.src);
     } else {
-      tex = downscaleTexture(await loadTexture(loader, `/${item.imageBW}`));
+      tex = downscaleTexture(await loadTexture(loader, withBase(item.imageBW)));
     }
 
     const img = tex.image;

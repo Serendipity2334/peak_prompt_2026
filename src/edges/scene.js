@@ -133,6 +133,7 @@ export function createEdgesScene(canvas) {
         uOpacity: { value: 1 },
         uGrain: { value: 0.045 },
         uUseAlpha: { value: 0 },
+        uRedOnly: { value: 0 },
         uResolution: { value: res.clone() },
         uImageSize: { value: new THREE.Vector2(w, h) }
       },

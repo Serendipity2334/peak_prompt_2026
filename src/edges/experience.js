@@ -6,10 +6,34 @@ const MAX_TEX_W = 960;
 const Z_GAP = 0.02;
 
 /**
- * Worth-it finale: stesso extract di keep-going, ma testo bianco pieno
- * (niente difference / mix-blend).
+ * Back to darkness: compare nei buchi extract della mucca, poi pieno sul bianco.
+ * Testo scuro (leggibile sul bianco).
  */
-const worthFollowFrag = /* glsl */ `
+/** uFit 0 = cover, 1 = contain (peak ritagliata intera nel viewport). */
+const FIT_UV_GLSL = /* glsl */ `
+uniform float uFit;
+vec2 fitUV(vec2 uv, vec2 res, vec2 img) {
+  float sA = res.x / max(res.y, 1.0);
+  float iA = img.x / max(img.y, 1.0);
+  vec2 outUv = uv;
+  if (uFit > 0.5) {
+    if (sA > iA) {
+      outUv.x = 0.5 + (uv.x - 0.5) * (sA / iA);
+    } else {
+      outUv.y = 0.5 + (uv.y - 0.5) * (iA / sA);
+    }
+  } else {
+    if (sA > iA) {
+      outUv.y = 0.5 + (uv.y - 0.5) * (iA / sA);
+    } else {
+      outUv.x = 0.5 + (uv.x - 0.5) * (sA / iA);
+    }
+  }
+  return outUv;
+}
+`;
+
+const backFollowFrag = /* glsl */ `
 uniform sampler2D uTitle;
 uniform sampler2D uMap;
 uniform sampler2D uMapHi;
@@ -24,25 +48,14 @@ uniform vec2 uResolution;
 uniform vec2 uImageSize;
 uniform vec2 uPrevSize;
 varying vec2 vUv;
-
-vec2 coverUV(vec2 uv, vec2 res, vec2 img) {
-  float sA = res.x / max(res.y, 1.0);
-  float iA = img.x / max(img.y, 1.0);
-  vec2 outUv = uv;
-  if (sA > iA) {
-    outUv.y = 0.5 + (uv.y - 0.5) * (iA / sA);
-  } else {
-    outUv.x = 0.5 + (uv.x - 0.5) * (sA / iA);
-  }
-  return outUv;
-}
+${FIT_UV_GLSL}
 
 void main() {
-  vec2 puv = coverUV(vUv, uResolution, uImageSize);
+  vec2 puv = fitUV(vUv, uResolution, uImageSize);
   if (puv.x < 0.0 || puv.x > 1.0 || puv.y < 0.0 || puv.y > 1.0) discard;
 
   if (uUsePrev > 0.5) {
-    vec2 puvP = coverUV(vUv, uResolution, uPrevSize);
+    vec2 puvP = fitUV(vUv, uResolution, uPrevSize);
     if (puvP.x >= 0.0 && puvP.x <= 1.0 && puvP.y >= 0.0 && puvP.y <= 1.0) {
       vec3 prev = mix(
         texture2D(uPrevMap, puvP).rgb,
@@ -64,7 +77,70 @@ void main() {
 
   vec4 t = texture2D(uTitle, vUv);
   if (t.a < 0.05) discard;
-  gl_FragColor = vec4(1.0, 1.0, 1.0, t.a);
+  gl_FragColor = vec4(0.05, 0.05, 0.05, t.a);
+}
+`;
+
+/**
+ * Worth-it finale: extract + difference (come keep-going).
+ * Su aree rosse/scure alza la luminanza così resta chiaro e leggibile.
+ */
+const worthFollowFrag = /* glsl */ `
+uniform sampler2D uTitle;
+uniform sampler2D uMap;
+uniform sampler2D uMapHi;
+uniform sampler2D uPrevMap;
+uniform sampler2D uPrevMapHi;
+uniform float uDetailMix;
+uniform float uPrevDetail;
+uniform float uCutoff;
+uniform float uPrevCutoff;
+uniform float uUsePrev;
+uniform vec2 uResolution;
+uniform vec2 uImageSize;
+uniform vec2 uPrevSize;
+varying vec2 vUv;
+${FIT_UV_GLSL}
+
+void main() {
+  vec2 puv = fitUV(vUv, uResolution, uImageSize);
+  if (puv.x < 0.0 || puv.x > 1.0 || puv.y < 0.0 || puv.y > 1.0) discard;
+
+  if (uUsePrev > 0.5) {
+    vec2 puvP = fitUV(vUv, uResolution, uPrevSize);
+    if (puvP.x >= 0.0 && puvP.x <= 1.0 && puvP.y >= 0.0 && puvP.y <= 1.0) {
+      vec3 prev = mix(
+        texture2D(uPrevMap, puvP).rgb,
+        texture2D(uPrevMapHi, puvP).rgb,
+        clamp(uPrevDetail, 0.0, 1.0)
+      );
+      float Lp = dot(prev, vec3(0.2126, 0.7152, 0.0722));
+      if (Lp >= (1.0 - uPrevCutoff)) discard;
+    }
+  }
+
+  vec3 photo = mix(
+    texture2D(uMap, puv).rgb,
+    texture2D(uMapHi, puv).rgb,
+    clamp(uDetailMix, 0.0, 1.0)
+  );
+  float L = dot(photo, vec3(0.2126, 0.7152, 0.0722));
+  if (L < (1.0 - uCutoff)) discard;
+
+  vec4 t = texture2D(uTitle, vUv);
+  if (t.a < 0.05) discard;
+
+  // difference (source chiaro) + pavimento di luminanza alto → leggibile su rosso
+  vec3 diff = abs(t.rgb - photo);
+  diff = pow(max(diff, vec3(0.001)), vec3(0.55));
+  float Ld = dot(diff, vec3(0.2126, 0.7152, 0.0722));
+  float redish = clamp(photo.r - 0.4 * (photo.g + photo.b), 0.0, 1.0);
+  // quasi bianco su zone scure/rosse; resta difference solo se già chiara
+  float lift = max(smoothstep(0.7, 0.25, Ld), 0.55 + 0.45 * redish);
+  diff = mix(diff, vec3(1.0), lift);
+  diff = max(diff, vec3(0.82));
+
+  gl_FragColor = vec4(clamp(diff, 0.0, 1.0), t.a);
 }
 `;
 
@@ -277,6 +353,14 @@ function coverSize(viewW, viewH, aspect) {
   return { w: viewH * a, h: viewH };
 }
 
+/** Piano che entra intero nel viewport (letterbox) — per ritagli PNG sulla peak */
+function containSize(viewW, viewH, aspect) {
+  const a = Math.max(aspect, 0.05);
+  const viewA = viewW / viewH;
+  if (viewA > a) return { w: viewH * a, h: viewH };
+  return { w: viewW, h: viewW / a };
+}
+
 function prepTex(texture) {
   texture.generateMipmaps = false;
   texture.minFilter = THREE.LinearFilter;
@@ -446,7 +530,25 @@ export function createExperience(canvas) {
   let worthCanvas = null;
   /** Indice slide finale (foto peak) per “it was worth it…”. */
   let worthItIndex = -1;
-  const WORTH_IT_TEXT = 'it was worth it, enjoy the light';
+  const WORTH_IT_TEXT = 'it was worth it. enjoy the light';
+  const BACK_TEXT = 'back to darkness';
+  /** @type {THREE.Mesh | null} */
+  let backMesh = null;
+  /** @type {HTMLCanvasElement | null} */
+  let backCanvas = null;
+  let backHitActive = false;
+  /** @type {THREE.Mesh | null} */
+  let transportMesh = null;
+  /** @type {HTMLCanvasElement | null} */
+  let transportCanvas = null;
+  /** Label controlli (aggiornate da main). */
+  let transportLabels = {
+    rew: '◀◀ ×1',
+    toggle: 'play',
+    ff: '▶▶ ×1',
+    color: '#ffffff'
+  };
+  let transportHitActive = false;
   /** @type {THREE.Mesh | null} */
   let morphBg = null;
   /** @type {THREE.Texture[]} */
@@ -530,6 +632,7 @@ export function createExperience(canvas) {
         uOpacity: { value: 1 },
         uGrain: { value: 0 },
         uUseAlpha: { value: 0 },
+        uRedOnly: { value: 0 },
         uResolution: {
           value: new THREE.Vector2(window.innerWidth, window.innerHeight)
         },
@@ -543,23 +646,23 @@ export function createExperience(canvas) {
     });
   }
 
-  /** Ultimo layer: PNG ritagliato; dietro si vede il morph bianco. */
+  /** Ultimo layer: PNG ritagliato; B/N + edge soft (meno rosso del 100% light pieno). */
   async function makeEndMesh(index) {
-    const url = '/assets/images/end_peak.png';
+    const url = '/assets/images/end_peak.png?v=4';
     const tex = prepTex(await loadTexture(loader, url));
     const img = tex.image;
     const iw = img.width || 1;
     const ih = img.height || 1;
-    // grading come le altre slide (luma → blu/rosso), non forzata al 100% light
-    const mat = makeShaderMat(tex, { light: 0, shadow: 0 });
+    // tone bilanciato → accenti blu/rosso radi, corpo in B/N
+    const mat = makeShaderMat(tex, { light: 0.35, shadow: 0.35 });
     mat.uniforms.uDetailMix.value = 1;
     mat.uniforms.uMapHi.value = tex;
     mat.uniforms.uUseAlpha.value = 1;
+    mat.uniforms.uRedOnly.value = 0;
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
     mesh.userData.kind = 'end';
     mesh.userData.isEndSlide = true;
     mesh.userData.index = index;
-    // HUD resta 100% light; lo shader usa luma neutra
     mesh.userData.item = { kind: 'end', time: '', light: 1, shadow: 0 };
     mesh.userData.video = null;
     mesh.userData.texture = tex;
@@ -684,6 +787,8 @@ export function createExperience(canvas) {
     await buildTitleOverlay();
     await buildKeepGoingOverlay();
     await buildWorthItOverlay();
+    await buildBackOverlay();
+    await buildTransportOverlay();
     await buildMorphBg(items);
 
     // fine sequenza → foto peak (non in raggiera; stesso stile extract/grana)
@@ -754,6 +859,8 @@ export function createExperience(canvas) {
       layoutTitleOverlay();
       layoutKeepGoingOverlay();
       layoutWorthItOverlay();
+      layoutBackOverlay();
+      layoutTransportOverlay();
       layoutMorphBg();
       // visibilità gestita da tickMorphBg (off in mezzo, on al finale chiaro)
       if (!isEndReveal()) setMorphBgVisible(false);
@@ -764,6 +871,10 @@ export function createExperience(canvas) {
     if (titleMesh) titleMesh.visible = false;
     if (keepMesh) keepMesh.visible = false;
     if (worthMesh) worthMesh.visible = false;
+    if (backMesh) backMesh.visible = false;
+    backHitActive = false;
+    if (transportMesh) transportMesh.visible = false;
+    transportHitActive = false;
     layoutMorphBg();
 
     // prefetch quando si inizia a raggruppare
@@ -1326,7 +1437,8 @@ export function createExperience(canvas) {
           value: new THREE.Vector2(window.innerWidth, window.innerHeight)
         },
         uImageSize: { value: new THREE.Vector2(1, 1) },
-        uPrevSize: { value: new THREE.Vector2(1, 1) }
+        uPrevSize: { value: new THREE.Vector2(1, 1) },
+        uFit: { value: 1 }
       },
       transparent: true,
       depthTest: false,
@@ -1341,9 +1453,73 @@ export function createExperience(canvas) {
     scene.add(worthMesh);
   }
 
-  /** Ex “it was worth it”: ora è il pulsante DOM sulla pagina bianca. */
+  /**
+   * “it was worth it”: compare con extract sulla peak, scompare
+   * con l’extract della mucca (non resta sul bianco).
+   */
   function layoutWorthItOverlay() {
-    if (worthMesh) worthMesh.visible = false;
+    if (!worthMesh || worthItIndex < 0 || mode !== 'sequence') {
+      if (worthMesh) worthMesh.visible = false;
+      return;
+    }
+
+    const i0 = worthItIndex;
+    const p = seq;
+    // fuori dalla finestra peak (reveal → extract)
+    if (p <= i0 - 1 || p >= i0 + 1) {
+      worthMesh.visible = false;
+      return;
+    }
+
+    let cutoff = 1;
+    let usePrev = 0;
+    let prevIdx = -1;
+    let prevCutoff = 0;
+
+    if (p < i0) {
+      // compare nei buchi dell’extract precedente
+      cutoff = 1;
+      usePrev = 1;
+      prevIdx = i0 - 1;
+      prevCutoff = 1 - (p - (i0 - 1));
+    } else {
+      // piena sulla mucca, poi scompare col suo extract
+      cutoff = 1 - (p - i0);
+    }
+
+    const mesh = meshes[i0];
+    if (!mesh) {
+      worthMesh.visible = false;
+      return;
+    }
+
+    const { w: fullW, h: fullH } = viewSize();
+    worthMesh.position.set(0, 0, 0.036);
+    worthMesh.scale.set(fullW, fullH, 1);
+    worthMesh.rotation.set(0, 0, 0);
+
+    const src = mesh.material.uniforms;
+    const mat = worthMesh.material;
+    mat.uniforms.uMap.value = src.uMap.value;
+    mat.uniforms.uMapHi.value = src.uMapHi.value;
+    mat.uniforms.uDetailMix.value = src.uDetailMix.value;
+    mat.uniforms.uCutoff.value = cutoff;
+    mat.uniforms.uImageSize.value.copy(src.uImageSize.value);
+    mat.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
+    mat.uniforms.uUsePrev.value = usePrev;
+    // peak in contain: stesso fit degli overlay
+    mat.uniforms.uFit.value = mesh.userData.isEndSlide ? 1 : 0;
+
+    if (usePrev && prevIdx >= 0 && meshes[prevIdx]) {
+      const prev = meshes[prevIdx].material.uniforms;
+      mat.uniforms.uPrevMap.value = prev.uMap.value;
+      mat.uniforms.uPrevMapHi.value = prev.uMapHi.value;
+      mat.uniforms.uPrevDetail.value = prev.uDetailMix.value;
+      mat.uniforms.uPrevCutoff.value = prevCutoff;
+      mat.uniforms.uPrevSize.value.copy(prev.uImageSize.value);
+    }
+
+    worthMesh.visible = cutoff > 0.001;
   }
 
   function captureWorthItFromDom() {
@@ -1362,6 +1538,350 @@ export function createExperience(canvas) {
     }
     worthMesh = null;
     worthCanvas = null;
+  }
+
+  function paintBackCanvas() {
+    if (!backCanvas) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const cssW = window.innerWidth;
+    const cssH = window.innerHeight;
+    const w = Math.max(2, Math.round(cssW * dpr));
+    const h = Math.max(2, Math.round(cssH * dpr));
+    if (backCanvas.width !== w || backCanvas.height !== h) {
+      backCanvas.width = w;
+      backCanvas.height = h;
+    }
+    const ctx = backCanvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    const el = document.getElementById('btn-back-darkness');
+    const cs = el ? getComputedStyle(el) : null;
+    if (cs) {
+      ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      if ('letterSpacing' in ctx) ctx.letterSpacing = cs.letterSpacing || '0px';
+    } else {
+      ctx.font = '700 0.95rem "GT Cinetype", "GTCinetype", sans-serif';
+    }
+    ctx.fillStyle = '#050505';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const x = cssW * 0.5;
+    const y = cssH * 0.5;
+    ctx.fillText(BACK_TEXT, x, y);
+    // sottolineatura come il bottone DOM
+    const tw = ctx.measureText(BACK_TEXT).width;
+    const rem =
+      parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    ctx.strokeStyle = '#050505';
+    ctx.lineWidth = Math.max(1, rem * 0.06);
+    ctx.beginPath();
+    ctx.moveTo(x - tw * 0.5, y + rem * 0.55);
+    ctx.lineTo(x + tw * 0.5, y + rem * 0.55);
+    ctx.stroke();
+  }
+
+  async function buildBackOverlay() {
+    disposeBackOverlay();
+    try {
+      await document.fonts.load('700 16px "GT Cinetype"');
+      await document.fonts.ready;
+    } catch {
+      /* ignore */
+    }
+
+    backCanvas = document.createElement('canvas');
+    paintBackCanvas();
+    const tex = prepTex(new THREE.CanvasTexture(backCanvas));
+    tex.premultiplyAlpha = false;
+
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: edgeVert,
+      fragmentShader: backFollowFrag,
+      uniforms: {
+        uTitle: { value: tex },
+        uMap: { value: tex },
+        uMapHi: { value: tex },
+        uPrevMap: { value: tex },
+        uPrevMapHi: { value: tex },
+        uDetailMix: { value: 0 },
+        uPrevDetail: { value: 0 },
+        uCutoff: { value: 1 },
+        uPrevCutoff: { value: 0 },
+        uUsePrev: { value: 0 },
+        uResolution: {
+          value: new THREE.Vector2(window.innerWidth, window.innerHeight)
+        },
+        uImageSize: { value: new THREE.Vector2(1, 1) },
+        uPrevSize: { value: new THREE.Vector2(1, 1) },
+        uFit: { value: 1 }
+      },
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false
+    });
+
+    backMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+    backMesh.frustumCulled = false;
+    backMesh.renderOrder = 204;
+    backMesh.visible = false;
+    scene.add(backMesh);
+  }
+
+  /**
+   * Back to darkness: compare nei buchi extract della mucca,
+   * poi resta pieno sul bianco.
+   */
+  function layoutBackOverlay() {
+    backHitActive = false;
+    if (!backMesh || worthItIndex < 0 || mode !== 'sequence') {
+      if (backMesh) backMesh.visible = false;
+      return;
+    }
+
+    const i0 = worthItIndex;
+    const p = seq;
+    // solo da quando la mucca inizia a estrarsi in poi
+    if (p < i0) {
+      backMesh.visible = false;
+      return;
+    }
+
+    let usePrev = 0;
+    let prevCutoff = 0;
+    if (p < i0 + 1) {
+      usePrev = 1;
+      prevCutoff = 1 - (p - i0);
+    }
+
+    const mesh = meshes[i0];
+    if (!mesh) {
+      backMesh.visible = false;
+      return;
+    }
+
+    const { w: fullW, h: fullH } = viewSize();
+    backMesh.position.set(0, 0, 0.038);
+    backMesh.scale.set(fullW, fullH, 1);
+    backMesh.rotation.set(0, 0, 0);
+
+    const src = mesh.material.uniforms;
+    const mat = backMesh.material;
+    mat.uniforms.uMap.value = src.uMap.value;
+    mat.uniforms.uMapHi.value = src.uMapHi.value;
+    mat.uniforms.uDetailMix.value = src.uDetailMix.value;
+    mat.uniforms.uCutoff.value = 1;
+    mat.uniforms.uImageSize.value.copy(src.uImageSize.value);
+    mat.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
+    mat.uniforms.uUsePrev.value = usePrev;
+    mat.uniforms.uFit.value = mesh.userData.isEndSlide ? 1 : 0;
+    mat.uniforms.uPrevMap.value = src.uMap.value;
+    mat.uniforms.uPrevMapHi.value = src.uMapHi.value;
+    mat.uniforms.uPrevDetail.value = src.uDetailMix.value;
+    mat.uniforms.uPrevCutoff.value = prevCutoff;
+    mat.uniforms.uPrevSize.value.copy(src.uImageSize.value);
+
+    backMesh.visible = true;
+    backHitActive = !usePrev || prevCutoff < 0.92;
+  }
+
+  function captureBackFromDom() {
+    if (!backCanvas || !backMesh) return;
+    paintBackCanvas();
+    const tex = backMesh.material.uniforms.uTitle.value;
+    if (tex) tex.needsUpdate = true;
+  }
+
+  function disposeBackOverlay() {
+    if (backMesh) {
+      scene.remove(backMesh);
+      backMesh.material.uniforms.uTitle.value?.dispose();
+      backMesh.material.dispose();
+      backMesh.geometry.dispose();
+    }
+    backMesh = null;
+    backCanvas = null;
+    backHitActive = false;
+  }
+
+  function paintTransportCanvas() {
+    if (!transportCanvas) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const cssW = window.innerWidth;
+    const cssH = window.innerHeight;
+    const w = Math.max(2, Math.round(cssW * dpr));
+    const h = Math.max(2, Math.round(cssH * dpr));
+    if (transportCanvas.width !== w || transportCanvas.height !== h) {
+      transportCanvas.width = w;
+      transportCanvas.height = h;
+    }
+    const ctx = transportCanvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    // stesso tipografico dei dati HUD (0.85rem Bold)
+    const probe = document.getElementById('hud-ele');
+    const cs = probe ? getComputedStyle(probe) : null;
+    if (cs) {
+      ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      if ('letterSpacing' in ctx) ctx.letterSpacing = cs.letterSpacing || '0px';
+    } else {
+      ctx.font = '700 0.85rem "GT Cinetype", "GTCinetype", sans-serif';
+    }
+    ctx.fillStyle = transportLabels.color || '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // allinea ai hit-target DOM (#seq-rew / toggle / ff)
+    const ids = ['seq-rew', 'seq-toggle', 'seq-ff'];
+    const texts = [
+      transportLabels.rew,
+      transportLabels.toggle,
+      transportLabels.ff
+    ];
+    let painted = false;
+    for (let i = 0; i < ids.length; i++) {
+      const el = document.getElementById(ids[i]);
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 && r.height < 1) continue;
+      ctx.fillText(texts[i], r.left + r.width * 0.5, r.top + r.height * 0.5);
+      painted = true;
+    }
+    if (!painted) {
+      const rem =
+        parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const y = cssH - 1.15 * rem;
+      const gap = Math.min(cssW * 0.12, 96);
+      const cx = cssW * 0.5;
+      ctx.fillText(transportLabels.rew, cx - gap, y);
+      ctx.fillText(transportLabels.toggle, cx, y);
+      ctx.fillText(transportLabels.ff, cx + gap, y);
+    }
+  }
+
+  async function buildTransportOverlay() {
+    disposeTransportOverlay();
+    try {
+      await document.fonts.load('700 14px "GT Cinetype"');
+      await document.fonts.ready;
+    } catch {
+      /* ignore */
+    }
+
+    transportCanvas = document.createElement('canvas');
+    paintTransportCanvas();
+    const tex = prepTex(new THREE.CanvasTexture(transportCanvas));
+    tex.premultiplyAlpha = false;
+
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: edgeVert,
+      fragmentShader: keepFollowFrag,
+      uniforms: {
+        uTitle: { value: tex },
+        uMap: { value: tex },
+        uMapHi: { value: tex },
+        uPrevMap: { value: tex },
+        uPrevMapHi: { value: tex },
+        uDetailMix: { value: 0 },
+        uPrevDetail: { value: 0 },
+        uCutoff: { value: 1 },
+        uPrevCutoff: { value: 0 },
+        uUsePrev: { value: 0 },
+        uResolution: {
+          value: new THREE.Vector2(window.innerWidth, window.innerHeight)
+        },
+        uImageSize: { value: new THREE.Vector2(1, 1) },
+        uPrevSize: { value: new THREE.Vector2(1, 1) }
+      },
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false
+    });
+
+    transportMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+    transportMesh.frustumCulled = false;
+    transportMesh.renderOrder = 203;
+    transportMesh.visible = false;
+    scene.add(transportMesh);
+  }
+
+  /**
+   * Controlli: pieni dal 2° file; scompaiono con extract del media prima della mucca.
+   */
+  function layoutTransportOverlay() {
+    transportHitActive = false;
+    if (!transportMesh || worthItIndex < 1 || mode !== 'sequence') {
+      if (transportMesh) transportMesh.visible = false;
+      return;
+    }
+
+    const iPen = worthItIndex - 1; // video/foto subito prima della peak
+    const p = seq;
+    if (p < 1 - 1e-4 || p >= iPen + 1) {
+      transportMesh.visible = false;
+      return;
+    }
+
+    let hostIdx = iPen;
+    let cutoff = 1;
+
+    if (p <= iPen) {
+      // pieni su tutte le media fino a quella pre-peak
+      hostIdx = Math.min(Math.max(Math.floor(p), 1), iPen);
+      cutoff = 1;
+    } else {
+      // scompaiono con l’extract del media prima della mucca
+      hostIdx = iPen;
+      cutoff = 1 - (p - iPen);
+    }
+
+    const mesh = meshes[hostIdx];
+    if (!mesh || mesh.userData.isEndSlide) {
+      transportMesh.visible = false;
+      return;
+    }
+
+    const { w: fullW, h: fullH } = viewSize();
+    transportMesh.position.set(0, 0, 0.037);
+    transportMesh.scale.set(fullW, fullH, 1);
+    transportMesh.rotation.set(0, 0, 0);
+
+    const src = mesh.material.uniforms;
+    const mat = transportMesh.material;
+    mat.uniforms.uMap.value = src.uMap.value;
+    mat.uniforms.uMapHi.value = src.uMapHi.value;
+    mat.uniforms.uDetailMix.value = src.uDetailMix.value;
+    mat.uniforms.uCutoff.value = cutoff;
+    mat.uniforms.uImageSize.value.copy(src.uImageSize.value);
+    mat.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
+    mat.uniforms.uUsePrev.value = 0;
+
+    const vis = cutoff > 0.001;
+    transportMesh.visible = vis;
+    transportHitActive = vis && cutoff > 0.05;
+  }
+
+  function setTransportLabels(rew, toggle, ff, color = '#ffffff') {
+    transportLabels = { rew, toggle, ff, color };
+    if (!transportCanvas || !transportMesh) return;
+    paintTransportCanvas();
+    const tex = transportMesh.material.uniforms.uTitle.value;
+    if (tex) tex.needsUpdate = true;
+  }
+
+  function disposeTransportOverlay() {
+    if (transportMesh) {
+      scene.remove(transportMesh);
+      transportMesh.material.uniforms.uTitle.value?.dispose();
+      transportMesh.material.dispose();
+      transportMesh.geometry.dispose();
+    }
+    transportMesh = null;
+    transportCanvas = null;
+    transportHitActive = false;
   }
 
   function morphTexSize(tex) {
@@ -1543,10 +2063,13 @@ export function createExperience(canvas) {
 
     for (let i = 0; i < n; i++) {
       const mesh = meshes[i];
-      const cover = coverSize(fullW, fullH, meshAspect(mesh));
+      const isEnd = mesh.userData.isEndSlide;
+      // peak ritagliata: contain (intera, niente crop); altre slide: cover
+      const fit = isEnd
+        ? containSize(fullW, fullH, meshAspect(mesh))
+        : coverSize(fullW, fullH, meshAspect(mesh));
       mesh.position.set(0, 0, -i * Z_GAP);
-      // aspect immagine, cover viewport (come le altre slide)
-      mesh.scale.set(cover.w, cover.h, 1);
+      mesh.scale.set(fit.w, fit.h, 1);
       mesh.rotation.z = 0;
       mesh.material.uniforms.uCover.value = 0;
       mesh.material.uniforms.uOpacity.value = 1;
@@ -1568,6 +2091,8 @@ export function createExperience(canvas) {
     layoutTitleOverlay();
     layoutKeepGoingOverlay();
     layoutWorthItOverlay();
+    layoutBackOverlay();
+    layoutTransportOverlay();
     syncVideos();
   }
 
@@ -1625,6 +2150,7 @@ export function createExperience(canvas) {
     captureTitleFromDom();
     captureKeepGoingFromDom();
     captureWorthItFromDom();
+    captureBackFromDom();
 
     // spegni il DOM PRIMA del primo frame WebGL: altrimenti 1 frame di doppio titolo
     // (baseline diversa) → scatto di qualche mm all’inizio dell’erase
@@ -1717,6 +2243,14 @@ export function createExperience(canvas) {
     if (worthCanvas && worthMesh) {
       captureWorthItFromDom();
     }
+    if (backCanvas && backMesh) {
+      captureBackFromDom();
+    }
+    if (transportCanvas && transportMesh) {
+      paintTransportCanvas();
+      const tex = transportMesh.material.uniforms.uTitle.value;
+      if (tex) tex.needsUpdate = true;
+    }
     layout();
   }
 
@@ -1734,6 +2268,8 @@ export function createExperience(canvas) {
       layoutTitleOverlay();
       layoutKeepGoingOverlay();
       layoutWorthItOverlay();
+      layoutBackOverlay();
+      layoutTransportOverlay();
       if (isEndReveal()) tickMorphBg(performance.now());
     }
     if (mode === 'sequence' || intro > 1.3) {
@@ -1782,6 +2318,8 @@ export function createExperience(canvas) {
     disposeTitleOverlay();
     disposeKeepGoingOverlay();
     disposeWorthItOverlay();
+    disposeBackOverlay();
+    disposeTransportOverlay();
     disposeMorphBg();
     keepGoingIndex = -1;
     worthItIndex = -1;
@@ -1814,9 +2352,14 @@ export function createExperience(canvas) {
     },
     captureTitleFromDom,
     captureKeepGoingFromDom,
+    setTransportLabels,
+    isTransportHitActive: () => transportHitActive,
+    isBackHitActive: () => backHitActive,
+    captureBackFromDom,
     get count() {
       return items.length;
     },
+    getKeepGoingIndex: () => keepGoingIndex,
     resize,
     render
   };

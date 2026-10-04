@@ -115,6 +115,11 @@ body.edges-page {
   transform: translateY(-50%);
 }
 
+/* slide 2–4: source più scuro → dopo difference il testo si legge meglio */
+.hud-data.is-darker {
+  color: #7a7a7a;
+}
+
 #hud-ele {
   left: 2.5vw;
 }
@@ -124,7 +129,8 @@ body.edges-page {
   text-align: right;
 }
 
-#hud-keepgoing {
+#hud-keepgoing,
+#hud-worthit {
   left: 50%;
   text-align: center;
   transform: translate(-50%, -50%);
@@ -135,14 +141,75 @@ body.edges-page {
   visibility: hidden !important;
 }
 
-/* pagina bianca dopo la peak — al posto di “it was worth it” */
+#hud-worthit {
+  font-size: 1.15rem;
+  letter-spacing: 0.07em;
+}
+
+/* transport: dal 2° file fino al media prima della peak — stesso look dei dati HUD */
+#seq-transport {
+  position: fixed;
+  left: 50%;
+  bottom: 1.15rem;
+  z-index: 12;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 1.35rem;
+  transform: translateX(-50%);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
+}
+
+#seq-transport.is-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+/* hit-area invisibile: il disegno è WebGL (extract + difference) */
+#seq-transport.is-hit-only button {
+  margin: 0;
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  line-height: 1.2;
+  text-transform: lowercase;
+  white-space: nowrap;
+  cursor: pointer;
+  opacity: 0;
+}
+
+#seq-transport:not(.is-hit-only) button {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  mix-blend-mode: difference;
+}
+
+/* hit-area; disegno WebGL (extract + testo scuro sottolineato) */
 #btn-back-darkness {
   position: fixed;
   left: 50%;
   top: 50%;
   z-index: 12;
   margin: 0;
-  padding: 0;
+  padding: 0.5rem 0.75rem;
   border: 0;
   background: transparent;
   color: #000;
@@ -153,23 +220,25 @@ body.edges-page {
   line-height: 1.2;
   text-align: center;
   text-transform: lowercase;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
   white-space: nowrap;
   cursor: pointer;
   transform: translate(-50%, -50%);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transition: opacity 0.25s ease, visibility 0.25s ease;
 }
 
 #btn-back-darkness.is-visible {
-  opacity: 1;
   visibility: visible;
   pointer-events: auto;
 }
 
-#btn-back-darkness:hover {
-  text-decoration: underline;
+#btn-back-darkness.is-hit-only {
+  color: transparent;
+  text-decoration-color: transparent;
+  opacity: 0;
 }
 
 #peak-title {

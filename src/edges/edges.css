@@ -16,8 +16,8 @@ body.edges-page {
   font-family: var(--font-ui);
   font-weight: 400;
   -webkit-font-smoothing: antialiased;
-  /* tipografia UI: un po’ più grande di 0.42, sotto il troppo grande (~1.05) */
-  --ui-size: clamp(0.62rem, 1.05vw, 0.78rem);
+  /* tipografia UI: leggibile (~16px), non più micro */
+  --ui-size: 1rem;
   --seq-hud-size: var(--ui-size);
   --landing-chrome-size: var(--ui-size);
   --seq-hud-weight: 400;

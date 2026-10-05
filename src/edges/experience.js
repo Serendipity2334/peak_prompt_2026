@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import edgeVert from './edge.vert.js';
 import edgeFrag from './edge.frag.js';
 import { withBase } from './base.js';
+import { loadRoutePath, placeItemsOnRoute } from './pathRoute.js';
 
 const MAX_TEX_W = 960;
 const Z_GAP = 0.02;
@@ -436,10 +437,43 @@ function loadTexture(loader, url) {
 }
 
 const CLOCK_WEDGES = 10;
+/** Quote fisse inizio/fine percorso (le intermedie dal GPX). */
+const PATH_ELE_START = 2065;
+const PATH_ELE_END = 2717;
+/** Partenza + 8 intermedie + arrivo (come i 10 orari dell’orologio). */
+const PATH_ELE_LABELS = CLOCK_WEDGES;
+/** Label % light lungo l’asse ombra→luce. */
+const LIGHT_PCT_MARKS = [0, 25, 50, 75, 100];
 /** Illuminazione orari landing: uno ogni 2s, senso orario da 14:09. */
 const CLOCK_PULSE_MS = 2000;
 const CLOCK_PULSE_DIM = 0.22;
 const CLOCK_PULSE_START = '14:09';
+const _labelCamQ = new THREE.Quaternion();
+const _labelParentQ = new THREE.Quaternion();
+const _labelFaceQ = new THREE.Quaternion();
+const _quatIdentity = new THREE.Quaternion();
+
+/** Luminosità 0..1 (foto/video): guida ordine nuvola light. */
+function effectiveLight(item) {
+  const L = Number(item?.light);
+  if (Number.isFinite(L)) return THREE.MathUtils.clamp(L, 0, 1);
+  const r = Number(item?.lightRank);
+  if (Number.isFinite(r)) return THREE.MathUtils.clamp((r - 1) / 29, 0, 1);
+  return 0;
+}
+
+/** Rank effettivo: lightRank foto (1=buia→30=luce) o proxy da light video. */
+function effectiveLightRank(item) {
+  const r = Number(item?.lightRank);
+  if (Number.isFinite(r)) return r;
+  return 1 + effectiveLight(item) * 29;
+}
+
+function formatLightPct(pct) {
+  return `${Math.round(pct)}%`;
+}
+
+const LIGHT_GOLDEN = Math.PI * (3 - Math.sqrt(5)); // ~2.399
 
 function pad2(n) {
   return String(Math.floor(Math.abs(n)) % 100).padStart(2, '0');
@@ -486,11 +520,13 @@ function makeTimeLabel(text) {
     transparent: true,
     depthTest: false,
     depthWrite: false,
+    side: THREE.DoubleSide,
     toneMapped: false
   });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
   mesh.userData.aspect = w / h;
-  mesh.renderOrder = 120;
+  mesh.renderOrder = 320;
+  mesh.frustumCulled = false;
   return mesh;
 }
 
@@ -563,9 +599,44 @@ export function createExperience(canvas) {
 
   let halfW = 1;
   let halfH = 1;
+  /** Sequenza: ortografica. */
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
   camera.position.set(0, 0, 10);
   camera.lookAt(0, 0, 0);
+  /** Landing: prospettiva (parte piatta; drag → rotazione XYZ). */
+  const RING_FOV = 34;
+  const perspCam = new THREE.PerspectiveCamera(RING_FOV, 1, 0.1, 100);
+  perspCam.position.set(0, 0, 3.2);
+  perspCam.lookAt(0, 0, 0);
+
+  /** Anello / percorso (tile + orari o linea GPX); rotazione libera da drag. */
+  const ringRoot = new THREE.Group();
+  scene.add(ringRoot);
+  const ringRot = { x: 0, y: 0, z: 0 };
+  const ringVel = { x: 0, y: 0, z: 0 };
+  let ringDragging = false;
+  let ringDragLastX = 0;
+  let ringDragLastY = 0;
+  /** 0 = pitch/yaw, 2 = roll (tasto destro o Shift). */
+  let ringDragMode = 0;
+  /** @type {'clock' | 'path' | 'light'} */
+  let landingView = 'clock';
+  /** @type {Awaited<ReturnType<typeof loadRoutePath>> | null} */
+  let pathRoute = null;
+  /** @type {THREE.Line | null} */
+  let pathLine = null;
+  /** Posizioni world per ogni item timeline sul path. */
+  let pathSlots = [];
+  /** Quote inizio/fine percorso (come gli orari sull’orologio). */
+  /** @type {THREE.Mesh[]} */
+  let pathEleLabels = [];
+  /** Slot nuvola lightRank (u 0=buia → 1=luce + xy organici). */
+  /** @type {Array<{ u: number, rank: number, light: number, x: number, y: number, z: number }>} */
+  let lightSlots = [];
+  /** Indice media più buia (home della raccolta light). */
+  let lightHomeIdx = 0;
+  /** @type {THREE.Mesh[]} */
+  let lightPctLabels = [];
 
   const loader = new THREE.TextureLoader();
 
@@ -641,6 +712,550 @@ export function createExperience(canvas) {
     camera.top = halfH;
     camera.bottom = -halfH;
     camera.updateProjectionMatrix();
+
+    // altezza visibile a z=0 ≈ 2 (come ortho halfH=1) — vista frontale piatta
+    perspCam.aspect = aspect;
+    perspCam.fov = RING_FOV;
+    const dist = 1 / Math.tan(THREE.MathUtils.degToRad(RING_FOV * 0.5));
+    perspCam.position.set(0, 0, dist);
+    perspCam.near = 0.05;
+    perspCam.far = 100;
+    perspCam.lookAt(0, 0, 0);
+    perspCam.updateProjectionMatrix();
+  }
+
+  function activeCamera() {
+    return mode === 'intro' ? perspCam : camera;
+  }
+
+  function flattenRingRoot() {
+    ringRoot.rotation.set(0, 0, 0);
+    ringRoot.position.set(0, 0, 0);
+  }
+
+  function resetRingSpin() {
+    ringRot.x = 0;
+    ringRot.y = 0;
+    ringRot.z = 0;
+    ringVel.x = 0;
+    ringVel.y = 0;
+    ringVel.z = 0;
+    ringDragging = false;
+  }
+
+  function getLandingView() {
+    return landingView;
+  }
+
+  async function ensurePathRoute() {
+    if (pathRoute && pathLine && pathSlots.length && pathEleLabels.length) {
+      return pathRoute;
+    }
+    pathRoute = pathRoute || (await loadRoutePath());
+    pathSlots = placeItemsOnRoute(items, pathRoute);
+    disposePathLine();
+    const pts = pathRoute.points;
+    const positions = new Float32Array(pts.length * 3);
+    for (let i = 0; i < pts.length; i++) {
+      positions[i * 3] = pts[i].x;
+      positions[i * 3 + 1] = pts[i].y;
+      positions[i * 3 + 2] = pts[i].z;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.LineBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.82,
+      depthTest: true,
+      depthWrite: false
+    });
+    pathLine = new THREE.Line(geo, mat);
+    pathLine.frustumCulled = false;
+    pathLine.renderOrder = 40;
+    pathLine.visible = false;
+    ringRoot.add(pathLine);
+    await buildPathEleLabels();
+    return pathRoute;
+  }
+
+  function formatPathEleLabel(meters) {
+    if (!Number.isFinite(Number(meters))) return '— m';
+    return `${Math.round(Number(meters)).toLocaleString('it-IT')} m`;
+  }
+
+  /**
+   * Scala il path perché stia tra data e luogo (come il raggio dell’orologio),
+   * con un leggero margine interno.
+   */
+  function pathFitScale() {
+    if (!pathRoute?.points?.length) return 1;
+    let maxX = 0;
+    let maxY = 0;
+    for (const p of pathRoute.points) {
+      maxX = Math.max(maxX, Math.abs(p.x));
+      maxY = Math.max(maxY, Math.abs(p.y));
+    }
+    const short = Math.min(halfW, halfH);
+    // stesso tipo di pad verticale dell’orologio (meta-date / meta-place)
+    const padY = short * 0.3;
+    const padX = short * 0.14;
+    const availX = Math.max(halfW - padX, 0.25);
+    const availY = Math.max(halfH - padY, 0.25);
+    const sx = availX / Math.max(maxX, 1e-4);
+    const sy = availY / Math.max(maxY, 1e-4);
+    return Math.min(sx, sy) * 0.9;
+  }
+
+  /** Semiassi nuvola light 3D (pad meta / toggle). */
+  function lightCloudFit() {
+    const short = Math.min(halfW, halfH);
+    const tile = sizeWithAspect(short * 0.16, 1.2);
+    const padX = short * 0.12 + tile.w * 0.28;
+    const padY = short * 0.2 + tile.h * 0.28;
+    return {
+      hx: Math.max(halfW - padX, 0.3) * 0.82,
+      hy: Math.max(halfH - padY, 0.24) * 0.72,
+      hz: Math.max(short * 0.48, 0.26)
+    };
+  }
+
+  function lightHash(i, salt) {
+    const s = Math.sin(i * 127.1 + salt * 311.7) * 43758.5453;
+    return s - Math.floor(s);
+  }
+
+  /**
+   * Nuvola 3D: tutte le media (foto+video) ordinate per luminosità
+   * (0 = più buia → 1 = più luminosa), sparse a spirale e centrata.
+   */
+  function rebuildLightSlots() {
+    lightSlots = [];
+    lightHomeIdx = 0;
+    const n = items.length;
+    if (!n) return;
+
+    const { hx, hy, hz } = lightCloudFit();
+    const order = items
+      .map((item, i) => ({ i, light: effectiveLight(item) }))
+      .sort((a, b) => a.light - b.light || a.i - b.i);
+
+    lightHomeIdx = order[0].i;
+    const slots = new Array(n);
+
+    let cx = 0;
+    let cy = 0;
+    let cz = 0;
+    for (let k = 0; k < n; k++) {
+      const { i, light } = order[k];
+      const t = n <= 1 ? 0 : k / (n - 1);
+      const ang = k * LIGHT_GOLDEN;
+      const h2 = lightHash(k, 2);
+      const h3 = lightHash(k, 3);
+      const spread = 0.35 + 0.65 * Math.sin(Math.PI * t);
+      const radY = hy * spread * (0.55 + 0.45 * h2);
+      const radZ = hz * spread * (0.55 + 0.45 * h3);
+      const x = (t - 0.5) * 2 * hx;
+      const y = Math.sin(ang) * radY;
+      const z = Math.cos(ang) * radZ;
+      cx += x;
+      cy += y;
+      cz += z;
+      slots[i] = { u: t, rank: 1 + t * 29, light, x, y, z, order: k };
+    }
+    // baricentro → origine (nuvola centrata in viewport)
+    cx /= n;
+    cy /= n;
+    cz /= n;
+    for (let i = 0; i < n; i++) {
+      const s = slots[i];
+      if (!s) continue;
+      s.x -= cx;
+      s.y -= cy;
+      s.z -= cz;
+    }
+    lightSlots = slots;
+  }
+
+  function lightSlotPos(slot) {
+    return {
+      x: Number.isFinite(slot?.x) ? slot.x : 0,
+      y: Number.isFinite(slot?.y) ? slot.y : 0,
+      z: Number.isFinite(slot?.z) ? slot.z : 0.02
+    };
+  }
+
+  function faceCameraLocal(mesh) {
+    const cam = activeCamera();
+    cam.getWorldQuaternion(_labelCamQ);
+    ringRoot.updateWorldMatrix(true, false);
+    ringRoot.getWorldQuaternion(_labelParentQ);
+    _labelFaceQ.copy(_labelParentQ).invert().multiply(_labelCamQ);
+    mesh.quaternion.copy(_labelFaceQ);
+  }
+
+  function pathAtT(t) {
+    const p = pathRoute.atT(t);
+    const s = pathFitScale();
+    return {
+      x: p.x * s,
+      y: p.y * s,
+      z: p.z * s,
+      t: p.t,
+      ele: p.ele
+    };
+  }
+
+  /**
+   * 10 quote lungo il path, ma senza sovrapposizioni XY
+   * (il GPX si ripiega vicino alla vetta → equal-t le ammassa).
+   */
+  function pickPathEleSamples() {
+    const want = PATH_ELE_LABELS;
+    const pts = pathRoute.points;
+    const span = Math.max(
+      ...pts.map((p) => Math.hypot(p.x, p.y)),
+      0.2
+    );
+    const minDist = span * 0.16;
+    const candidates = [];
+    const N = 64;
+    for (let i = 0; i <= N; i++) {
+      const t = i / N;
+      const p = pathRoute.atT(t);
+      candidates.push({ t, x: p.x, y: p.y, z: p.z, ele: p.ele });
+    }
+    const start = pathRoute.atT(0);
+    const end = pathRoute.atT(1);
+    const picked = [
+      {
+        t: 0,
+        x: start.x,
+        y: start.y,
+        z: start.z,
+        meters: PATH_ELE_START
+      },
+      {
+        t: 1,
+        x: end.x,
+        y: end.y,
+        z: end.z,
+        meters: PATH_ELE_END
+      }
+    ];
+
+    const distToPicked = (c) => {
+      let min = Infinity;
+      for (const p of picked) {
+        const d = Math.hypot(c.x - p.x, c.y - p.y);
+        if (d < min) min = d;
+      }
+      return min;
+    };
+
+    while (picked.length < want) {
+      let best = null;
+      let bestScore = -1;
+      for (const c of candidates) {
+        if (c.t < 0.03 || c.t > 0.97) continue;
+        const rounded = Math.round(c.ele);
+        // evita una seconda “2717 m” / “2065 m” lontano dagli estremi
+        if (rounded === PATH_ELE_START || rounded === PATH_ELE_END) continue;
+        const d = distToPicked(c);
+        if (d < minDist) continue;
+        if (d > bestScore) {
+          bestScore = d;
+          best = c;
+        }
+      }
+      if (!best) break;
+      picked.push({
+        t: best.t,
+        x: best.x,
+        y: best.y,
+        z: best.z,
+        meters: best.ele
+      });
+    }
+
+    picked.sort((a, b) => a.t - b.t);
+    return picked;
+  }
+
+  /** Offset etichetta verso l’esterno, normale al tracciato (non sopra le foto). */
+  function pathLabelWorldPos(t, dist) {
+    const p = pathAtT(t);
+    // agli estremi usa la tangente in arrivo/partenza (più stabile)
+    const eps = t > 0.97 || t < 0.03 ? 0.03 : 0.015;
+    const a = pathAtT(Math.max(0, t - eps));
+    const b = pathAtT(Math.min(1, t + eps));
+    let tx = b.x - a.x;
+    let ty = b.y - a.y;
+    const tl = Math.hypot(tx, ty) || 1;
+    tx /= tl;
+    ty /= tl;
+    let nx = -ty;
+    let ny = tx;
+    if (nx * p.x + ny * p.y < 0) {
+      nx = -nx;
+      ny = -ny;
+    }
+    return {
+      x: p.x + nx * dist,
+      y: p.y + ny * dist,
+      z: p.z + 0.08
+    };
+  }
+
+  async function buildPathEleLabels() {
+    disposePathEleLabels();
+    if (!pathRoute?.points?.length) return;
+    try {
+      await document.fonts.load('400 42px "GT Cinetype"');
+      await document.fonts.ready;
+    } catch {
+      /* ignore */
+    }
+    const samples = pickPathEleSamples();
+    pathEleLabels = [];
+    for (const s of samples) {
+      const label = makeTimeLabel(formatPathEleLabel(s.meters));
+      label.userData.pathT = s.t;
+      label.material.depthTest = false;
+      label.material.depthWrite = false;
+      label.renderOrder = 330;
+      ringRoot.add(label);
+      pathEleLabels.push(label);
+    }
+  }
+
+  function layoutPathEleLabels(m) {
+    if (!pathEleLabels.length || !pathRoute?.points?.length) return;
+    let opacity = 1;
+    if (m > 0.02) opacity = Math.max(0, 1 - (m - 0.02) / 0.55);
+    if (m > 0.85) opacity = 0;
+
+    const short = Math.min(halfW, halfH);
+    const labelW = landingLabelWidth();
+    const cam = activeCamera();
+    cam.getWorldQuaternion(_labelCamQ);
+    ringRoot.updateWorldMatrix(true, false);
+    ringRoot.getWorldQuaternion(_labelParentQ);
+    _labelFaceQ.copy(_labelParentQ).invert().multiply(_labelCamQ);
+
+    for (const label of pathEleLabels) {
+      const t = Number.isFinite(label.userData.pathT) ? label.userData.pathT : 0;
+      const tip = t < 0.04 || t > 0.96;
+      const outward = tip
+        ? short * 0.028 + labelW * 0.1
+        : short * 0.05 + labelW * 0.16;
+      // pathAtT già in spazio scalato (= linea * pathFitScale)
+      const pos = pathLabelWorldPos(t, outward);
+      const aspect = label.userData.aspect || 4;
+      const lh = labelW / aspect;
+      label.position.set(pos.x, pos.y, pos.z);
+      label.scale.set(labelW, lh, 1);
+      label.quaternion.copy(_labelFaceQ);
+      label.material.opacity = opacity;
+      label.visible = opacity > 0.02 && landingView === 'path';
+    }
+  }
+
+  function disposePathEleLabels() {
+    for (const label of pathEleLabels) {
+      label.removeFromParent();
+      label.material.map?.dispose();
+      label.material.dispose();
+      label.geometry.dispose();
+    }
+    pathEleLabels = [];
+  }
+
+  function disposeLightPctLabels() {
+    for (const label of lightPctLabels) {
+      label.removeFromParent();
+      label.material.map?.dispose();
+      label.material.dispose();
+      label.geometry.dispose();
+    }
+    lightPctLabels = [];
+  }
+
+  async function buildLightPctLabels() {
+    disposeLightPctLabels();
+    try {
+      await document.fonts.load('400 42px "GT Cinetype"');
+      await document.fonts.ready;
+    } catch {
+      /* ignore */
+    }
+    for (const pct of LIGHT_PCT_MARKS) {
+      const label = makeTimeLabel(formatLightPct(pct));
+      label.userData.lightU = pct / 100;
+      label.material.depthTest = false;
+      label.material.depthWrite = false;
+      label.renderOrder = 330;
+      ringRoot.add(label);
+      lightPctLabels.push(label);
+    }
+  }
+
+  function layoutLightPctLabels(m) {
+    if (!lightPctLabels.length) return;
+    let opacity = 1;
+    if (m > 0.02) opacity = Math.max(0, 1 - (m - 0.02) / 0.55);
+    if (m > 0.85) opacity = 0;
+
+    const short = Math.min(halfW, halfH);
+    const { hx, hy } = lightCloudFit();
+    const labelW = landingLabelWidth();
+    const cam = activeCamera();
+    cam.getWorldQuaternion(_labelCamQ);
+    ringRoot.updateWorldMatrix(true, false);
+    ringRoot.getWorldQuaternion(_labelParentQ);
+    _labelFaceQ.copy(_labelParentQ).invert().multiply(_labelCamQ);
+
+    const tile = sizeWithAspect(short * 0.16, 1.2);
+    const y = -(hy * 0.72 + tile.h * 0.28 + short * 0.02);
+
+    for (const label of lightPctLabels) {
+      const u = Number.isFinite(label.userData.lightU)
+        ? label.userData.lightU
+        : 0;
+      const x = (u - 0.5) * 2 * hx;
+      const aspect = label.userData.aspect || 4;
+      const lh = labelW / aspect;
+      label.position.set(x, y, 0.12);
+      label.scale.set(labelW, lh, 1);
+      label.quaternion.copy(_labelFaceQ);
+      label.material.opacity = opacity;
+      label.visible = opacity > 0.02 && landingView === 'light';
+    }
+  }
+
+  function disposePathLine() {
+    if (pathLine) {
+      pathLine.removeFromParent();
+      pathLine.geometry.dispose();
+      pathLine.material.dispose();
+      pathLine = null;
+    }
+    disposePathEleLabels();
+  }
+
+  function setLandingView(view) {
+    const next =
+      view === 'path' ? 'path' : view === 'light' ? 'light' : 'clock';
+    landingView = next;
+    resetRingSpin();
+    if (next === 'path') {
+      disposePathLine();
+      void ensurePathRoute()
+        .then(() => {
+          if (mode === 'intro') layout();
+        })
+        .catch((err) => console.warn('[edges] percorso GPX', err));
+      for (const label of lightPctLabels) label.visible = false;
+    } else if (next === 'light') {
+      if (pathLine) {
+        pathLine.visible = false;
+        for (const label of pathEleLabels) label.visible = false;
+      }
+      rebuildLightSlots();
+      if (!lightPctLabels.length) {
+        void buildLightPctLabels().then(() => {
+          if (mode === 'intro' && landingView === 'light') layout();
+        });
+      }
+    } else {
+      if (pathLine) {
+        pathLine.visible = false;
+        for (const label of pathEleLabels) label.visible = false;
+      }
+      for (const label of lightPctLabels) label.visible = false;
+    }
+    if (mode === 'intro') {
+      intro = Math.min(intro, 0.001);
+      layout();
+    }
+  }
+
+  function canExploreRing() {
+    // come l’orologio: esplorabile in 3D a riposo, non durante la raccolta
+    return mode === 'intro' && intro < 0.85;
+  }
+
+  function onRingPointerDown(e) {
+    if (!canExploreRing()) return;
+    // sinistro = X/Y; destro o Shift = Z (roll)
+    const roll =
+      e.button === 2 || e.shiftKey || (e.buttons & 2) !== 0;
+    if (e.button != null && e.button !== 0 && e.button !== 2) return;
+    e.preventDefault();
+    ringDragging = true;
+    ringDragMode = roll ? 2 : 0;
+    ringVel.x = 0;
+    ringVel.y = 0;
+    ringVel.z = 0;
+    ringDragLastX = e.clientX;
+    ringDragLastY = e.clientY;
+    try {
+      canvas.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    canvas.style.cursor = 'grabbing';
+  }
+
+  function onRingPointerMove(e) {
+    if (!ringDragging || !canExploreRing()) return;
+    const dx = e.clientX - ringDragLastX;
+    const dy = e.clientY - ringDragLastY;
+    ringDragLastX = e.clientX;
+    ringDragLastY = e.clientY;
+    const sens = landingView === 'light' ? 0.009 : 0.0065;
+    const roll = ringDragMode === 2 || e.shiftKey;
+    if (roll) {
+      const dZ = dx * sens;
+      ringRot.z += dZ;
+      ringVel.z = dZ;
+      ringVel.x = 0;
+      ringVel.y = 0;
+    } else {
+      const dY = dx * sens;
+      const dX = dy * sens;
+      ringRot.y += dY;
+      ringRot.x += dX;
+      ringVel.y = dY;
+      ringVel.x = dX;
+      ringVel.z = 0;
+    }
+  }
+
+  function onRingPointerUp(e) {
+    if (!ringDragging) return;
+    ringDragging = false;
+    ringDragMode = 0;
+    try {
+      canvas.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    canvas.style.cursor = canExploreRing() ? 'grab' : '';
+  }
+
+  function onRingContextMenu(e) {
+    if (canExploreRing()) e.preventDefault();
+  }
+
+  function bindRingDrag() {
+    canvas.style.touchAction = 'none';
+    canvas.style.cursor = 'grab';
+    canvas.addEventListener('pointerdown', onRingPointerDown);
+    canvas.addEventListener('pointermove', onRingPointerMove);
+    canvas.addEventListener('pointerup', onRingPointerUp);
+    canvas.addEventListener('pointercancel', onRingPointerUp);
+    canvas.addEventListener('contextmenu', onRingContextMenu);
   }
 
   function viewSize() {
@@ -671,6 +1286,11 @@ export function createExperience(canvas) {
     return Math.max(0.42, short - diag - pad);
   }
 
+  /** Stessa scala world per orari / quote / % light. */
+  function landingLabelWidth() {
+    return Math.min(halfW, halfH) * 0.24;
+  }
+
   function setImageSize(mesh, tex) {
     const img = tex.image;
     const w = img.videoWidth || img.width || 1;
@@ -699,6 +1319,7 @@ export function createExperience(canvas) {
         uUseAlpha: { value: 0 },
         uRedOnly: { value: 0 },
         uEdgeAmt: { value: 1 },
+        uEdgeOnly: { value: 0 },
         uResolution: {
           value: new THREE.Vector2(window.innerWidth, window.innerHeight)
         },
@@ -862,14 +1483,21 @@ export function createExperience(canvas) {
       for (const mesh of part) {
         mesh.userData.angle0 =
           Math.PI / 2 - (mesh.userData.index / n) * Math.PI * 2;
-        scene.add(mesh);
+        ringRoot.add(mesh);
         meshes.push(mesh);
       }
       layout();
-      renderer.render(scene, camera);
+      renderer.render(scene, activeCamera());
     }
 
     await buildClockFace(items);
+    try {
+      await ensurePathRoute();
+    } catch (err) {
+      console.warn('[edges] percorso GPX non caricato', err);
+    }
+    rebuildLightSlots();
+    await buildLightPctLabels();
     await buildTitleOverlay();
     await buildKeepGoingOverlay();
     await buildWorthItOverlay();
@@ -903,6 +1531,7 @@ export function createExperience(canvas) {
     intro = 0;
     seq = 0;
     mode = 'intro';
+    resetRingSpin();
     layout();
 
     // preload full dei primi + prefetch video in background (no stacco in sequenza)
@@ -957,8 +1586,12 @@ export function createExperience(canvas) {
     const { w: fullW, h: fullH } = viewSize();
 
     if (mode === 'sequence') {
+      flattenRingRoot();
       layoutSequence(fullW, fullH);
       setClockVisible(false);
+      for (const label of lightPctLabels) label.visible = false;
+      if (pathLine) pathLine.visible = false;
+      for (const label of pathEleLabels) label.visible = false;
       layoutTitleOverlay();
       layoutKeepGoingOverlay();
       layoutWorthItOverlay();
@@ -999,11 +1632,129 @@ export function createExperience(canvas) {
     // fluttuazione piena a riposo, si attenua chiudendo e sparisce nello zoom
     const floatStr = (1 - m) * (0.25 + 0.75 * (1 - g));
 
+    // inerzia rotazione (solo in explore)
+    if (!ringDragging && canExploreRing()) {
+      const speed =
+        Math.abs(ringVel.x) + Math.abs(ringVel.y) + Math.abs(ringVel.z);
+      if (speed > 1e-5) {
+        ringRot.x += ringVel.x;
+        ringRot.y += ringVel.y;
+        ringRot.z += ringVel.z;
+        ringVel.x *= 0.94;
+        ringVel.y *= 0.94;
+        ringVel.z *= 0.94;
+      }
+    } else if (!canExploreRing()) {
+      ringVel.x = 0;
+      ringVel.y = 0;
+      ringVel.z = 0;
+    }
+
+    // come l’orologio: tilt 3D solo a riposo; con lo scroll torna piano
+    const explore = (1 - m) * (1 - g);
+    ringRoot.rotation.x = ringRot.x * explore;
+    ringRoot.rotation.y = ringRot.y * explore;
+    ringRoot.rotation.z = ringRot.z * explore;
+    ringRoot.position.set(0, 0, 0);
+    canvas.style.cursor = canExploreRing()
+      ? ringDragging
+        ? 'grabbing'
+        : 'grab'
+      : '';
+
+    const zAmp = 0.04 * explore;
+
+    if (landingView === 'path' && pathRoute && pathSlots.length) {
+      const pathScale = pathFitScale();
+      layoutPathTiles({
+        n,
+        g,
+        m,
+        hideBehind,
+        floatStr,
+        zAmp,
+        fullW,
+        fullH,
+        pathScale
+      });
+      layoutPathEleLabels(m);
+      if (pathLine) {
+        // scala uniforme: linea e media condividono lo stesso spazio
+        pathLine.scale.setScalar(pathScale);
+        pathLine.visible = m < 0.85;
+        pathLine.material.opacity =
+          0.82 * (1 - m) * (0.55 + 0.45 * (1 - g));
+      }
+      setClockVisible(false);
+      for (const label of lightPctLabels) label.visible = false;
+    } else if (landingView === 'light') {
+      if (pathLine) {
+        pathLine.visible = false;
+        pathLine.scale.setScalar(1);
+      }
+      for (const label of pathEleLabels) label.visible = false;
+      if (!lightSlots.length) rebuildLightSlots();
+      layoutLightTiles({
+        n,
+        g,
+        m,
+        spacing,
+        hideBehind,
+        floatStr,
+        zAmp,
+        fullW,
+        fullH
+      });
+      layoutLightPctLabels(m);
+      setClockVisible(false);
+    } else {
+      if (pathLine) {
+        pathLine.visible = false;
+        pathLine.scale.setScalar(1);
+      }
+      for (const label of pathEleLabels) label.visible = false;
+      for (const label of lightPctLabels) label.visible = false;
+      layoutClockTiles({
+        n,
+        g,
+        m,
+        spacing,
+        rRing,
+        angleHome,
+        hideBehind,
+        floatStr,
+        zAmp,
+        fullW,
+        fullH
+      });
+      layoutClockFace(m);
+    }
+    updateDetailMix();
+  }
+
+  function layoutClockTiles({
+    n,
+    g,
+    m,
+    spacing,
+    rRing,
+    angleHome,
+    hideBehind,
+    floatStr,
+    zAmp,
+    fullW,
+    fullH
+  }) {
     for (let i = 0; i < n; i++) {
       const mesh = meshes[i];
       if (mesh.userData.isEndSlide) {
         mesh.visible = false;
         continue;
+      }
+      mesh.material.depthTest = true;
+      mesh.material.depthWrite = true;
+      if (mesh.material.uniforms.uEdgeOnly) {
+        mesh.material.uniforms.uEdgeOnly.value = 0;
       }
       const angle0 = mesh.userData.angle0;
       const isFirst = i === 0;
@@ -1011,33 +1762,31 @@ export function createExperience(canvas) {
       const tile = tileSizeFor(mesh);
 
       if (isFirst) {
-        // fermo sulle 12 per tutta la chiusura; poi slitta al centro
         const homeX = Math.cos(angleHome) * rRing;
         const homeY = Math.sin(angleHome) * rRing;
         const cover = coverSize(fullW, fullH, aspect);
 
         const x = THREE.MathUtils.lerp(homeX, 0, m);
         const y = THREE.MathUtils.lerp(homeY, 0, m);
-        const z = THREE.MathUtils.lerp(0.06, 0, m);
+        const z = THREE.MathUtils.lerp(Math.sin(angleHome) * zAmp + 0.03, 0, m);
         const sw = THREE.MathUtils.lerp(tile.w, cover.w, m);
         const sh = THREE.MathUtils.lerp(tile.h, cover.h, m);
 
         mesh.position.set(x, y, z);
         mesh.scale.set(sw, sh, 1);
-        mesh.rotation.z = 0; // già dritto alle 12
+        mesh.rotation.set(0, 0, 0);
         applyFloat(mesh, floatStr);
         mesh.material.uniforms.uCover.value = 0;
         mesh.material.uniforms.uOpacity.value = 1;
         mesh.material.uniforms.uCutoff.value = 1;
-        // noise come landing; entra con lo zoom verso sequenza
         mesh.material.uniforms.uGrain.value = 0.045 * m;
         mesh.renderOrder = n + 20;
         mesh.visible = true;
       } else {
-        // chiusura angolare verso le 12, stesso raggio (ventaglio)
         const angle = angleHome + (angle0 - angleHome) * spacing;
         const rimRot = angle - angleHome;
-        const depth = g * (0.02 - Math.abs(i) * 0.0003);
+        const depth =
+          Math.sin(angle) * zAmp + g * (0.02 - Math.abs(i) * 0.0003);
         const sc = THREE.MathUtils.lerp(1, 0.72, g);
 
         mesh.position.set(
@@ -1046,7 +1795,7 @@ export function createExperience(canvas) {
           depth
         );
         mesh.scale.set(tile.w * sc, tile.h * sc, 1);
-        mesh.rotation.z = THREE.MathUtils.lerp(rimRot, 0, g);
+        mesh.rotation.set(0, 0, THREE.MathUtils.lerp(rimRot, 0, g));
         applyFloat(mesh, floatStr);
         mesh.material.uniforms.uCover.value = 0;
         mesh.material.uniforms.uOpacity.value = hideBehind ? 0 : 1;
@@ -1056,9 +1805,224 @@ export function createExperience(canvas) {
         mesh.visible = !hideBehind;
       }
     }
+  }
 
-    layoutClockFace(m);
-    updateDetailMix();
+  function layoutPathTiles({
+    n,
+    g,
+    m,
+    hideBehind,
+    floatStr,
+    zAmp,
+    fullW,
+    fullH,
+    pathScale = 1
+  }) {
+    // media sempre su atT (stesso spazio della linea); spacing come l’orologio
+    const slot0 = pathSlots[0] || { x: 0, y: 0, z: 0, t: 0 };
+    const tHome = Number.isFinite(slot0.t) ? slot0.t : 0;
+    const fit = pathScale || pathFitScale();
+    const homeAlong = pathRoute
+      ? (() => {
+          const p = pathRoute.atT(tHome);
+          return { x: p.x * fit, y: p.y * fit, z: p.z * fit };
+        })()
+      : slot0;
+    const homeX = homeAlong.x;
+    const homeY = homeAlong.y;
+    const homeZ = (homeAlong.z ?? 0) + 0.02;
+
+    let mediaCount = 0;
+    for (let i = 0; i < n; i++) {
+      if (!meshes[i]?.userData.isEndSlide) mediaCount++;
+    }
+    const lastMedia = Math.max(mediaCount - 1, 1);
+
+    const pathTileScale = 0.58;
+    const gathering = g > 0.012 || m > 0.01;
+    const pathFloat = gathering ? 0 : floatStr * 0.2;
+
+    for (let i = 0; i < n; i++) {
+      const mesh = meshes[i];
+      if (mesh.userData.isEndSlide) {
+        mesh.visible = false;
+        continue;
+      }
+      const slot = pathSlots[i] || pathSlots[pathSlots.length - 1] || slot0;
+      const isFirst = i === 0;
+      const aspect = meshAspect(mesh);
+      const tile = tileSizeFor(mesh);
+      const tw = tile.w * pathTileScale;
+      const th = tile.h * pathTileScale;
+
+      mesh.material.depthTest = !gathering;
+      mesh.material.depthWrite = !gathering;
+      if (mesh.material.uniforms.uEdgeOnly) {
+        mesh.material.uniforms.uEdgeOnly.value = 0;
+      }
+
+      if (isFirst) {
+        const cover = coverSize(fullW, fullH, aspect);
+        const x = THREE.MathUtils.lerp(homeX, 0, m);
+        const y = THREE.MathUtils.lerp(homeY, 0, m);
+        const z = THREE.MathUtils.lerp(homeZ, 0, m);
+        const sw = THREE.MathUtils.lerp(tw, cover.w, m);
+        const sh = THREE.MathUtils.lerp(th, cover.h, m);
+
+        mesh.position.set(x, y, z);
+        mesh.scale.set(sw, sh, 1);
+        mesh.rotation.set(0, 0, 0);
+        applyFloat(mesh, pathFloat);
+        mesh.material.uniforms.uCover.value = 0;
+        mesh.material.uniforms.uOpacity.value = 1;
+        mesh.material.uniforms.uCutoff.value = 1;
+        mesh.material.uniforms.uGrain.value = 0.045 * m;
+        mesh.renderOrder = n + 20;
+        mesh.visible = true;
+      } else {
+        const tSlot = Number.isFinite(slot.t)
+          ? slot.t
+          : THREE.MathUtils.clamp(i / lastMedia, 0, 1);
+
+        // cascata cronologica ultima→prima; sempre sul GPX
+        const u = i / lastMedia;
+        const lead = (1 - u) * 0.22;
+        const gLocal = THREE.MathUtils.clamp((g - lead) / (1 - 0.22), 0, 1);
+        const spacing = 1 - gLocal;
+        const tAlong = tHome + (tSlot - tHome) * spacing;
+        const sc = THREE.MathUtils.lerp(1, 0.72, gLocal);
+        // stack minimo: solo layering, non stacca dalla linea in 3D
+        const stack = gLocal * (0.003 + i * 0.0012);
+
+        let x;
+        let y;
+        let z;
+        if (pathRoute) {
+          const p = pathRoute.atT(tAlong);
+          x = p.x * fit;
+          y = p.y * fit;
+          z = p.z * fit + 0.02 - stack;
+        } else {
+          x = homeX + ((slot.x || 0) * fit - homeX) * spacing;
+          y = homeY + ((slot.y || 0) * fit - homeY) * spacing;
+          z = homeZ - stack;
+        }
+
+        mesh.position.set(x, y, z);
+        mesh.scale.set(tw * sc, th * sc, 1);
+        mesh.rotation.set(0, 0, 0);
+        applyFloat(mesh, pathFloat);
+        mesh.material.uniforms.uCover.value = 0;
+        mesh.material.uniforms.uOpacity.value = hideBehind ? 0 : 1;
+        mesh.material.uniforms.uCutoff.value = 1;
+        mesh.material.uniforms.uGrain.value = 0;
+        mesh.renderOrder = n - i;
+        mesh.visible = !hideBehind;
+      }
+    }
+  }
+
+  /**
+   * Nuvola 3D luminosità (foto+video): drag mouse per esplorare;
+   * raccolta sulla più buia; morph → sequenza invariata.
+   */
+  function layoutLightTiles({
+    n,
+    g,
+    m,
+    spacing,
+    hideBehind,
+    floatStr,
+    zAmp,
+    fullW,
+    fullH
+  }) {
+    rebuildLightSlots();
+
+    const homeSlot = lightSlots[lightHomeIdx] || lightSlots[0] || {
+      u: 0,
+      x: 0,
+      y: 0,
+      z: 0.02,
+      order: 0
+    };
+    const home = lightSlotPos(homeSlot);
+    const homeX = home.x;
+    const homeY = home.y;
+    const homeZ = home.z;
+
+    const lightTileScale = 0.82;
+    const gathering = g > 0.012 || m > 0.01;
+    const edgeOnly = m < 0.55 ? 1 : 0;
+    const explore = !gathering;
+
+    for (let i = 0; i < n; i++) {
+      const mesh = meshes[i];
+      if (mesh.userData.isEndSlide) {
+        mesh.visible = false;
+        continue;
+      }
+      const slot = lightSlots[i] || homeSlot;
+      const rest = lightSlotPos(slot);
+      const isFirst = i === 0;
+      const isHome = i === lightHomeIdx;
+      const ord = Number.isFinite(slot.order) ? slot.order : i;
+      const aspect = meshAspect(mesh);
+      const tile = tileSizeFor(mesh);
+      const tw = tile.w * lightTileScale;
+      const th = tile.h * lightTileScale;
+
+      mesh.material.depthTest = !gathering;
+      mesh.material.depthWrite = !gathering && edgeOnly < 0.5;
+      if (mesh.material.uniforms.uEdgeOnly) {
+        mesh.material.uniforms.uEdgeOnly.value = edgeOnly;
+      }
+
+      if (isFirst) {
+        const gx = homeX + (rest.x - homeX) * spacing;
+        const gy = homeY + (rest.y - homeY) * spacing;
+        const gz = homeZ + (rest.z - homeZ) * spacing;
+        const cover = coverSize(fullW, fullH, aspect);
+        const x = THREE.MathUtils.lerp(gx, 0, m);
+        const y = THREE.MathUtils.lerp(gy, 0, m);
+        const z = THREE.MathUtils.lerp(gz, 0, m);
+        const sw = THREE.MathUtils.lerp(tw, cover.w, m);
+        const sh = THREE.MathUtils.lerp(th, cover.h, m);
+
+        mesh.position.set(x, y, z);
+        mesh.scale.set(sw, sh, 1);
+        if (explore) faceCameraLocal(mesh);
+        else mesh.rotation.set(0, 0, 0);
+        applyFloat(mesh, explore ? floatStr * 1.2 : 0);
+        mesh.material.uniforms.uCover.value = 0;
+        mesh.material.uniforms.uOpacity.value = 1;
+        mesh.material.uniforms.uCutoff.value = 1;
+        mesh.material.uniforms.uGrain.value = 0.045 * m;
+        mesh.renderOrder =
+          m > 0.01 || isHome ? n + 20 : n - ord;
+        mesh.visible = true;
+      } else {
+        const x = homeX + (rest.x - homeX) * spacing;
+        const y = homeY + (rest.y - homeY) * spacing;
+        const z =
+          homeZ +
+          (rest.z - homeZ) * spacing +
+          g * (0.012 - ord * 0.0002);
+        const sc = THREE.MathUtils.lerp(1, 0.72, g);
+
+        mesh.position.set(x, y, z + (explore ? zAmp * 0.25 : 0));
+        mesh.scale.set(tw * sc, th * sc, 1);
+        if (explore) faceCameraLocal(mesh);
+        else mesh.rotation.set(0, 0, 0);
+        applyFloat(mesh, explore ? floatStr * 1.2 : 0);
+        mesh.material.uniforms.uCover.value = 0;
+        mesh.material.uniforms.uOpacity.value = hideBehind ? 0 : 1;
+        mesh.material.uniforms.uCutoff.value = 1;
+        mesh.material.uniforms.uGrain.value = 0;
+        mesh.renderOrder = isHome ? n + 10 : n - ord;
+        mesh.visible = !hideBehind;
+      }
+    }
   }
 
   /** Leggero drift per-tile; strength 1 in landing, si spegne con chiusura/zoom. */
@@ -1070,7 +2034,9 @@ export function createExperience(canvas) {
     const amp = (mesh.userData.floatAmp || 0.01) * strength;
     mesh.position.x += Math.sin(t * sp + ph) * amp;
     mesh.position.y += Math.cos(t * sp * 0.87 + ph * 1.3) * amp * 0.8;
-    mesh.rotation.z += Math.sin(t * sp * 0.55 + ph * 0.7) * 0.014 * strength;
+    if (landingView === 'clock') {
+      mesh.rotation.z += Math.sin(t * sp * 0.55 + ph * 0.7) * 0.014 * strength;
+    }
   }
 
   function setClockVisible(on) {
@@ -1112,6 +2078,10 @@ export function createExperience(canvas) {
       label.userData.angle = angle;
       label.userData.wedge = k;
       label.userData.timeText = timeText;
+      // sempre sopra le tile; orientamento billboard in layoutClockFace
+      label.material.depthTest = false;
+      label.material.depthWrite = false;
+      label.renderOrder = 320;
       clockGroup.add(label);
       clockLabels.push(label);
     }
@@ -1123,13 +2093,13 @@ export function createExperience(canvas) {
     clockPulseStart = startIdx >= 0 ? startIdx : 0;
     clockPulseT0 = performance.now();
 
-    scene.add(clockGroup);
+    ringRoot.add(clockGroup);
   }
 
   function layoutClockFace(m) {
     if (!clockGroup) return;
     const short = Math.min(halfW, halfH);
-    const labelW = short * 0.32;
+    const labelW = landingLabelWidth();
     // appena fuori dalla raggiera delle tile
     const sample = sizeWithAspect(short * 0.25, 1.2);
     const tileOut = Math.hypot(sample.w, sample.h) * 0.5;
@@ -1147,6 +2117,16 @@ export function createExperience(canvas) {
           ) % nLab
         : 0;
     const active = nLab > 0 ? (clockPulseStart + step) % nLab : 0;
+    const cam = activeCamera();
+    cam.getWorldQuaternion(_labelCamQ);
+    if (clockGroup.parent) {
+      clockGroup.parent.updateWorldMatrix(true, false);
+      clockGroup.parent.getWorldQuaternion(_labelParentQ);
+    } else {
+      _labelParentQ.identity();
+    }
+    // quaternion locale = inverse(parent) * camera → testo sempre verso la vista
+    _labelFaceQ.copy(_labelParentQ).invert().multiply(_labelCamQ);
 
     for (let i = 0; i < nLab; i++) {
       const label = clockLabels[i];
@@ -1161,16 +2141,17 @@ export function createExperience(canvas) {
       const r = Math.min(rLabel + labelIn * 0.05, maxR);
       const lit = i === active ? 1 : CLOCK_PULSE_DIM;
       const pop = i === active ? 1.08 : 1;
-      label.position.set(Math.cos(a) * r, Math.sin(a) * r, 0.08);
+      label.position.set(Math.cos(a) * r, Math.sin(a) * r, 0.05);
       label.scale.set(lw * pop, lh * pop, 1);
-      label.rotation.z = 0;
+      label.quaternion.copy(_labelFaceQ);
       label.material.opacity = opacity * lit;
+      label.visible = opacity > 0.02;
     }
     clockGroup.visible = opacity > 0.02;
   }
 
   function disposeClock() {
-    if (clockGroup) scene.remove(clockGroup);
+    if (clockGroup) clockGroup.removeFromParent();
     for (const label of clockLabels) {
       label.material.map?.dispose();
       label.material.dispose();
@@ -2049,8 +3030,16 @@ export function createExperience(canvas) {
   function layoutMorphBg() {
     if (!morphBg) return;
     const { w, h } = viewSize();
-    morphBg.scale.set(w * 1.18, h * 1.18, 1);
     morphBg.position.set(0, 0, -8);
+    if (mode === 'intro') {
+      const dist = Math.abs(perspCam.position.z - morphBg.position.z);
+      const vh =
+        2 * dist * Math.tan(THREE.MathUtils.degToRad(perspCam.fov * 0.5));
+      const vw = vh * Math.max(perspCam.aspect, 0.01);
+      morphBg.scale.set(vw * 1.25, vh * 1.25, 1);
+    } else {
+      morphBg.scale.set(w * 1.18, h * 1.18, 1);
+    }
     morphBg.material.uniforms.uResolution.value.set(
       window.innerWidth,
       window.innerHeight
@@ -2153,11 +3142,14 @@ export function createExperience(canvas) {
         : 0;
       mesh.position.set(0, yOff, -i * Z_GAP);
       mesh.scale.set(fit.w, fit.h, 1);
-      mesh.rotation.z = 0;
+      mesh.rotation.set(0, 0, 0);
       mesh.material.uniforms.uCover.value = 0;
       mesh.material.uniforms.uOpacity.value = 1;
       // stessa grana statica della sequenza (anche sulla foto finale)
       mesh.material.uniforms.uGrain.value = 0.045;
+      if (mesh.material.uniforms.uEdgeOnly) {
+        mesh.material.uniforms.uEdgeOnly.value = 0;
+      }
       mesh.renderOrder = n - i;
 
       if (p >= i + 1) {
@@ -2245,6 +3237,9 @@ export function createExperience(canvas) {
 
     mode = 'sequence';
     seq = 0;
+    resetRingSpin();
+    flattenRingRoot();
+    canvas.style.cursor = '';
     const { w, h } = viewSize();
     layoutSequence(w, h);
     const video = meshes[0]?.userData.video;
@@ -2264,9 +3259,13 @@ export function createExperience(canvas) {
     seq = 0;
     intro = Math.min(Math.max(at, 0), 1.999);
     clockPulseT0 = performance.now();
+    resetRingSpin();
     for (const mesh of meshes) {
       mesh.material.uniforms.uCutoff.value = 1;
       mesh.visible = !mesh.userData.isEndSlide;
+      if (!mesh.userData.isEndSlide && mesh.parent !== ringRoot) {
+        ringRoot.add(mesh);
+      }
     }
     layout();
     syncVideos();
@@ -2339,8 +3338,12 @@ export function createExperience(canvas) {
   }
 
   function needsIdleMotion() {
-    // float tile + morph sfondo in landing / finale chiaro
-    return (mode === 'intro' && intro < 1.85) || isEndReveal();
+    const spinning =
+      Math.abs(ringVel.x) + Math.abs(ringVel.y) + Math.abs(ringVel.z) > 1e-4;
+    return (
+      (mode === 'intro' && (intro < 1.9 || ringDragging || spinning)) ||
+      isEndReveal()
+    );
   }
 
   function render() {
@@ -2364,7 +3367,7 @@ export function createExperience(canvas) {
       }
     }
     syncVideos();
-    renderer.render(scene, camera);
+    renderer.render(scene, activeCamera());
   }
 
   function hasActiveVideo() {
@@ -2383,7 +3386,7 @@ export function createExperience(canvas) {
 
   function disposeMeshes() {
     for (const mesh of meshes) {
-      scene.remove(mesh);
+      mesh.removeFromParent();
       const video = mesh.userData.video;
       if (video) {
         video.pause();
@@ -2399,6 +3402,14 @@ export function createExperience(canvas) {
       mesh.geometry.dispose();
     }
     meshes = [];
+    flattenRingRoot();
+    resetRingSpin();
+    disposePathLine();
+    pathRoute = null;
+    pathSlots = [];
+    disposeLightPctLabels();
+    lightSlots = [];
+    lightHomeIdx = 0;
     disposeClock();
     disposeTitleOverlay();
     disposeKeepGoingOverlay();
@@ -2412,6 +3423,7 @@ export function createExperience(canvas) {
   }
 
   updateCameraFrustum();
+  bindRingDrag();
 
   return {
     build,
@@ -2422,6 +3434,9 @@ export function createExperience(canvas) {
     animateIntroTo,
     enterSequence,
     exitToIntro,
+    resetRingSpin,
+    setLandingView,
+    getLandingView,
     addSeq,
     setSeq,
     getSeq: () => seq,

@@ -31,6 +31,7 @@ body.edges-page {
   -webkit-font-smoothing: antialiased;
   /* sequenza: dati / frasi / transport — stessa misura */
   --seq-hud-size: 0.85rem;
+  --landing-chrome-size: 0.42rem;
   --seq-hud-weight: 400;
   --seq-hud-tracking: 0.06em;
   /* frasi e controlli: leggermente schiacciati in verticale */
@@ -54,35 +55,109 @@ body.edges-page input {
   touch-action: none;
 }
 
-/* tipografia come gli orari della raggiera (GT Cinetype, piccoli) */
-#meta-date,
-#meta-place {
+/* data + luogo + help: angolo in alto a destra */
+#meta-cluster {
   position: fixed;
-  left: 50%;
+  top: 1.15rem;
+  right: 2.5vw;
+  left: auto;
   z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 0.35em;
   pointer-events: none;
   color: #fff;
   font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
   font-weight: 400;
-  font-size: var(--seq-hud-size);
+  font-size: var(--landing-chrome-size);
   letter-spacing: var(--seq-hud-tracking);
   line-height: var(--seq-hud-line);
   white-space: nowrap;
-  text-align: center;
+  text-align: right;
   text-transform: lowercase;
   mix-blend-mode: difference;
-  transform: translateX(-50%);
+  transform: none;
   /* opacità guidata da JS (stesso fade degli orari) */
   opacity: 1;
 }
 
-#meta-date {
-  top: 1.15rem;
+.meta-row,
+#meta-help {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45em;
+  margin: 0;
+  padding: 0;
 }
 
+#meta-date,
 #meta-place {
-  top: auto;
+  margin: 0;
+  padding: 0;
+}
+
+#meta-help {
+  opacity: 0.72;
+}
+
+.meta-sep {
+  opacity: 0.55;
+  user-select: none;
+}
+
+/* modalità: clock sx / light centro / path dx */
+.mode-toggle {
+  position: fixed;
+  left: 2.5vw;
   bottom: 1.15rem;
+  z-index: 12;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4em;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
+  font-weight: 400;
+  font-size: var(--landing-chrome-size);
+  letter-spacing: var(--seq-hud-tracking);
+  line-height: var(--seq-hud-line);
+  text-transform: lowercase;
+  white-space: nowrap;
+  cursor: pointer;
+  mix-blend-mode: difference;
+  pointer-events: auto;
+  opacity: 1;
+}
+
+.mode-toggle-icon {
+  width: 0.95em;
+  height: 0.95em;
+  display: block;
+  flex: 0 0 auto;
+}
+
+.mode-toggle.is-active {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.mode-toggle--center {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+}
+
+.mode-toggle--right {
+  left: auto;
+  right: 2.5vw;
 }
 
 .hud-data {
@@ -229,7 +304,7 @@ body.edges-page input {
   text-underline-offset: 0.18em;
 }
 
-/* stessa altezza di #meta-place (“passo falzarego…”) */
+/* stessa altezza dei mode-toggle in basso */
 #btn-back-darkness {
   position: fixed;
   left: 50%;

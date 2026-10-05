@@ -18,8 +18,69 @@
       <span>peak</span>
     </div>
   </div>
-  <div id="meta-date" aria-hidden="true"></div>
-  <div id="meta-place" aria-hidden="true"></div>
+  <div id="meta-cluster" aria-hidden="true">
+    <div class="meta-row">
+      <div id="meta-date"></div>
+      <span class="meta-sep">·</span>
+      <div id="meta-place"></div>
+    </div>
+    <div id="meta-help">
+      <span>scroll to enter</span>
+      <span class="meta-sep">·</span>
+      <span>click + drag to explore</span>
+    </div>
+  </div>
+  <button type="button" id="mode-clock" class="mode-toggle is-active" aria-pressed="true" aria-label="clock">
+    <svg class="mode-toggle-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <!-- cerchio di rettangoli (raggiera semplificata) -->
+      <g fill="currentColor" transform="translate(8 8)">
+        <rect x="-0.55" y="-7.1" width="1.1" height="2.35" rx="0.2"/>
+        <rect x="-0.55" y="-7.1" width="1.1" height="2.35" rx="0.2" transform="rotate(30)"/>
+        <rect x="-0.55" y="-7.1" width="1.1" height="2.35" rx="0.2" transform="rotate(60)"/>
+        <rect x="-0.55" y="-7.1" width="1.1" height="2.35" rx="0.2" transform="rotate(90)"/>
+        <rect x="-0.55" y="-7.1" width="1.1" height="2.35" rx="0.2" transform="rotate(120)"/>
+        <rect x="-0.55" y="-7.1" width="1.1" height="2.35" rx="0.2" transform="rotate(150)"/>
+        <rect x="-0.55" y="-7.1" width="1.1" height="2.35" rx="0.2" transform="rotate(180)"/>
+        <rect x="-0.55" y="-7.1" width="1.1" height="2.35" rx="0.2" transform="rotate(210)"/>
+        <rect x="-0.55" y="-7.1" width="1.1" height="2.35" rx="0.2" transform="rotate(240)"/>
+        <rect x="-0.55" y="-7.1" width="1.1" height="2.35" rx="0.2" transform="rotate(270)"/>
+        <rect x="-0.55" y="-7.1" width="1.1" height="2.35" rx="0.2" transform="rotate(300)"/>
+        <rect x="-0.55" y="-7.1" width="1.1" height="2.35" rx="0.2" transform="rotate(330)"/>
+      </g>
+    </svg>
+    <span>clock</span>
+  </button>
+  <button type="button" id="mode-light" class="mode-toggle mode-toggle--center" aria-pressed="false" aria-label="light">
+    <svg class="mode-toggle-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <!-- cerchio pieno + raggi luce -->
+      <g fill="currentColor" transform="translate(8 8)">
+        <circle r="2.35"/>
+        <rect x="-0.45" y="-7.0" width="0.9" height="2.1" rx="0.2"/>
+        <rect x="-0.45" y="-7.0" width="0.9" height="2.1" rx="0.2" transform="rotate(45)"/>
+        <rect x="-0.45" y="-7.0" width="0.9" height="2.1" rx="0.2" transform="rotate(90)"/>
+        <rect x="-0.45" y="-7.0" width="0.9" height="2.1" rx="0.2" transform="rotate(135)"/>
+        <rect x="-0.45" y="-7.0" width="0.9" height="2.1" rx="0.2" transform="rotate(180)"/>
+        <rect x="-0.45" y="-7.0" width="0.9" height="2.1" rx="0.2" transform="rotate(225)"/>
+        <rect x="-0.45" y="-7.0" width="0.9" height="2.1" rx="0.2" transform="rotate(270)"/>
+        <rect x="-0.45" y="-7.0" width="0.9" height="2.1" rx="0.2" transform="rotate(315)"/>
+      </g>
+    </svg>
+    <span>light</span>
+  </button>
+  <button type="button" id="mode-path" class="mode-toggle mode-toggle--right" aria-pressed="false" aria-label="path">
+    <svg class="mode-toggle-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <!-- semplificazione traccia Falzarego → Lagazuoi (da Peak Prompt.gpx) -->
+      <path
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.35"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        d="M6.0 12.7 L7.5 11.2 L9.5 10.5 L11.8 9.2 L13.9 7.6 L13.5 5.5 L14.5 4.3 L11.5 4.0 L9.5 3.4 L8.5 4.6 L7.0 5.7 L5.5 5.8 L3.5 4.2 L1.5 3.8 L4.0 4.7 L6.2 5.8"
+      />
+    </svg>
+    <span>path</span>
+  </button>
   <div id="hud-ele" class="hud-data" aria-hidden="true"></div>
   <div id="hud-light" class="hud-data" aria-hidden="true"></div>
   <div id="hud-keepgoing" class="hud-data" aria-hidden="true">keep going, don't give up</div>

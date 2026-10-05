@@ -4,6 +4,7 @@
  * uGrain: stessa grana fine statica della landing (0 = off).
  * uEdgeAmt: intensità tinta edge (peak più bassa → più B/N).
  * uRedOnly: (legacy) se attivo, stessa formula ma senza spinta extra sul blu.
+ * uEdgeOnly: 1 = solo outline edge (trasparente altrove), per vista light.
  */
 export default /* glsl */ `
 uniform sampler2D uMap;
@@ -18,6 +19,7 @@ uniform float uGrain;
 uniform float uUseAlpha;
 uniform float uRedOnly;
 uniform float uEdgeAmt;
+uniform float uEdgeOnly;
 uniform vec2 uResolution;
 uniform vec2 uImageSize;
 varying vec2 vUv;
@@ -101,12 +103,22 @@ void main() {
   }
 
   edge *= clamp(uEdgeAmt, 0.0, 1.5);
-  vec3 color = mix(bw, grade, edge);
-  color += grain(vUv) * uGrain;
-  color = clamp(color, 0.0, 1.0);
 
   float a = clamp(uOpacity, 0.0, 1.0);
   if (uUseAlpha > 0.5) a *= tex4.a;
+
+  vec3 color;
+  if (uEdgeOnly > 0.5) {
+    // solo tratti edge impulse (blu/rosso); resto trasparente
+    if (edge < 0.04) discard;
+    color = grade;
+    a *= clamp(edge, 0.0, 1.0);
+  } else {
+    color = mix(bw, grade, edge);
+    color += grain(vUv) * uGrain;
+  }
+  color = clamp(color, 0.0, 1.0);
+
   gl_FragColor = vec4(color, a);
 }
 `;

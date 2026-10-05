@@ -9,7 +9,7 @@
     "sortKey": 50993,
     "light": 0.2395,
     "shadow": 0.7605,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.4352
   },
   {
@@ -22,7 +22,7 @@
     "sortKey": 51237.6,
     "light": 0.4672,
     "shadow": 0.5328,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.4754
   },
   {
@@ -35,7 +35,7 @@
     "sortKey": 51482.2,
     "light": 0.0045,
     "shadow": 0.9955,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.515
   },
   {
@@ -48,7 +48,7 @@
     "sortKey": 51726.8,
     "light": 0.0191,
     "shadow": 0.9809,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.4048
   },
   {
@@ -61,7 +61,7 @@
     "sortKey": 51971.4,
     "light": 0.4517,
     "shadow": 0.5483,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.5527
   },
   {
@@ -74,7 +74,7 @@
     "sortKey": 52216,
     "light": 0.5169,
     "shadow": 0.4831,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.4393
   },
   {
@@ -87,7 +87,7 @@
     "sortKey": 52460.6,
     "light": 0.4459,
     "shadow": 0.5541,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.5016
   },
   {
@@ -100,7 +100,7 @@
     "sortKey": 52705.2,
     "light": 0.3574,
     "shadow": 0.6426,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.5082
   },
   {
@@ -113,7 +113,7 @@
     "sortKey": 52949.8,
     "light": 0.0205,
     "shadow": 0.9795,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.4464
   },
   {
@@ -126,7 +126,7 @@
     "sortKey": 53194.4,
     "light": 0.4068,
     "shadow": 0.5932,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.5184
   },
   {
@@ -139,7 +139,7 @@
     "sortKey": 53439,
     "light": 0.4654,
     "shadow": 0.5346,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.4427
   },
   {
@@ -152,7 +152,7 @@
     "sortKey": 53683.6,
     "light": 0.0642,
     "shadow": 0.9358,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.5266
   },
   {
@@ -165,7 +165,7 @@
     "sortKey": 53928.2,
     "light": 0.4426,
     "shadow": 0.5574,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.5133
   },
   {
@@ -178,7 +178,7 @@
     "sortKey": 54172.8,
     "light": 0.4298,
     "shadow": 0.5702,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.3884
   },
   {
@@ -191,7 +191,7 @@
     "sortKey": 54417.4,
     "light": 0.2531,
     "shadow": 0.7469,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.4247
   },
   {
@@ -204,7 +204,7 @@
     "sortKey": 54662,
     "light": 0.1187,
     "shadow": 0.8813,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.5578
   },
   {
@@ -217,7 +217,7 @@
     "sortKey": 54906.6,
     "light": 0.6197,
     "shadow": 0.3803,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.4376
   },
   {
@@ -230,7 +230,7 @@
     "sortKey": 55151.2,
     "light": 0.4816,
     "shadow": 0.5184,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.4851
   },
   {
@@ -243,7 +243,7 @@
     "sortKey": 55395.8,
     "light": 0.3011,
     "shadow": 0.6989,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.4059
   },
   {
@@ -256,7 +256,7 @@
     "sortKey": 55640.4,
     "light": 0.8313,
     "shadow": 0.1687,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.5308
   },
   {
@@ -269,7 +269,7 @@
     "sortKey": 55885,
     "light": 0.5155,
     "shadow": 0.4845,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.5031
   },
   {
@@ -282,7 +282,7 @@
     "sortKey": 56129.6,
     "light": 0.0256,
     "shadow": 0.9744,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.4336
   },
   {
@@ -295,7 +295,7 @@
     "sortKey": 56374.2,
     "light": 0.6903,
     "shadow": 0.3097,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.4805
   },
   {
@@ -308,7 +308,7 @@
     "sortKey": 56618.8,
     "light": 0.3945,
     "shadow": 0.6055,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.4976
   },
   {
@@ -321,7 +321,7 @@
     "sortKey": 56863.4,
     "light": 0.2217,
     "shadow": 0.7783,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.1994
   },
   {
@@ -334,7 +334,7 @@
     "sortKey": 57108,
     "light": 0.3461,
     "shadow": 0.6539,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.4879
   },
   {
@@ -347,7 +347,7 @@
     "sortKey": 57352.6,
     "light": 0.0941,
     "shadow": 0.9059,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.1242
   },
   {
@@ -360,7 +360,7 @@
     "sortKey": 57597.2,
     "light": 0.1145,
     "shadow": 0.8855,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.4037
   },
   {
@@ -373,7 +373,7 @@
     "sortKey": 57841.8,
     "light": 0.3566,
     "shadow": 0.6434,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.4365
   },
   {
@@ -386,7 +386,7 @@
     "sortKey": 58086.4,
     "light": 0.8004,
     "shadow": 0.1996,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.5249
   },
   {
@@ -399,7 +399,7 @@
     "sortKey": 58331,
     "light": 0.3577,
     "shadow": 0.6423,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.4422
   },
   {
@@ -412,7 +412,7 @@
     "sortKey": 58575.6,
     "light": 0.1328,
     "shadow": 0.8672,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.3173
   },
   {
@@ -425,7 +425,7 @@
     "sortKey": 58820.2,
     "light": 0.3018,
     "shadow": 0.6982,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.2341
   },
   {
@@ -438,7 +438,7 @@
     "sortKey": 59064.8,
     "light": 0.3483,
     "shadow": 0.6517,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.3041
   },
   {
@@ -451,7 +451,7 @@
     "sortKey": 59309.4,
     "light": 0.297,
     "shadow": 0.703,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.4173
   },
   {
@@ -464,7 +464,7 @@
     "sortKey": 59554,
     "light": 0.1651,
     "shadow": 0.8349,
-    "neutral": 0,
+    "neutral": 0.0,
     "luma": 0.5116
   }
 ]

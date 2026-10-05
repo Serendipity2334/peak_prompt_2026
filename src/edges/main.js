@@ -8,8 +8,12 @@ import { createExperience } from './experience.js';
 
 const canvas = document.getElementById('c');
 const boot = document.getElementById('boot');
+const metaCluster = document.getElementById('meta-cluster');
 const metaDate = document.getElementById('meta-date');
 const metaPlace = document.getElementById('meta-place');
+const modeClock = document.getElementById('mode-clock');
+const modeLight = document.getElementById('mode-light');
+const modePath = document.getElementById('mode-path');
 const peakTitle = document.getElementById('peak-title');
 const hudEle = document.getElementById('hud-ele');
 const hudLight = document.getElementById('hud-light');
@@ -236,11 +240,73 @@ function syncMetaWithOrari() {
     if (m > 0.02) opacity = Math.max(0, 1 - (m - 0.02) / 0.55);
     if (m > 0.85) opacity = 0;
   }
-  for (const el of [metaDate, metaPlace]) {
+  for (const el of [metaCluster, modeClock, modeLight, modePath]) {
     if (!el) continue;
     el.style.opacity = String(opacity);
     el.style.visibility = opacity > 0.02 ? 'visible' : 'hidden';
   }
+  const onLanding = exp.getMode() === 'intro' && opacity > 0.02;
+  const view = exp.getLandingView?.() || 'clock';
+  if (modeClock) {
+    const on = onLanding && view === 'clock';
+    modeClock.classList.toggle('is-active', on);
+    modeClock.setAttribute('aria-pressed', on ? 'true' : 'false');
+    modeClock.style.pointerEvents = opacity > 0.02 ? 'auto' : 'none';
+  }
+  if (modeLight) {
+    const on = onLanding && view === 'light';
+    modeLight.classList.toggle('is-active', on);
+    modeLight.setAttribute('aria-pressed', on ? 'true' : 'false');
+    modeLight.style.pointerEvents = opacity > 0.02 ? 'auto' : 'none';
+  }
+  if (modePath) {
+    const on = onLanding && view === 'path';
+    modePath.classList.toggle('is-active', on);
+    modePath.setAttribute('aria-pressed', on ? 'true' : 'false');
+    modePath.style.pointerEvents = opacity > 0.02 ? 'auto' : 'none';
+  }
+}
+
+/** Prima modalità: orologio piatto / ruotabile. */
+function goClockMode() {
+  if (!ready) return;
+  stopPlayback();
+  exp.setLandingView?.('clock');
+  if (exp.getMode() !== 'intro' || exp.getIntro() > 0.02) {
+    exp.exitToIntro(0);
+  } else {
+    exp.resetRingSpin?.();
+    exp.setIntro(0);
+  }
+  kick();
+}
+
+/** Terza modalità: asse ombra → luce (lightRank). */
+function goLightMode() {
+  if (!ready) return;
+  stopPlayback();
+  exp.setLandingView?.('light');
+  if (exp.getMode() !== 'intro' || exp.getIntro() > 0.02) {
+    exp.exitToIntro(0);
+  } else {
+    exp.resetRingSpin?.();
+    exp.setIntro(0);
+  }
+  kick();
+}
+
+/** Seconda modalità: media sul percorso GPX. */
+function goPathMode() {
+  if (!ready) return;
+  stopPlayback();
+  exp.setLandingView?.('path');
+  if (exp.getMode() !== 'intro' || exp.getIntro() > 0.02) {
+    exp.exitToIntro(0);
+  } else {
+    exp.resetRingSpin?.();
+    exp.setIntro(0);
+  }
+  kick();
 }
 
 /**
@@ -611,6 +677,9 @@ window.addEventListener('wheel', onWheel, { passive: false });
 window.addEventListener('resize', onResize);
 window.addEventListener('keydown', onPreviewKey);
 btnBackDarkness?.addEventListener('click', goBackToDarkness);
+modeClock?.addEventListener('click', goClockMode);
+modeLight?.addEventListener('click', goLightMode);
+modePath?.addEventListener('click', goPathMode);
 seqRew?.addEventListener('click', onRewClick);
 seqFf?.addEventListener('click', onFfClick);
 seqToggle?.addEventListener('click', onToggleClick);

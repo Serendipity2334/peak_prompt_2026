@@ -117,6 +117,7 @@ function makeEdgeMaterial(tex, item) {
       uUseAlpha: { value: 0 },
       uRedOnly: { value: 0 },
       uEdgeAmt: { value: 1 },
+      uEdgeOnly: { value: 0 },
       uResolution: { value: new THREE.Vector2(1, 1) },
       uImageSize: { value: new THREE.Vector2(w, h) }
     },

@@ -9,6 +9,7 @@ import { createExperience } from './experience.js';
 const canvas = document.getElementById('c');
 const boot = document.getElementById('boot');
 const metaCluster = document.getElementById('meta-cluster');
+const metaHelp = document.getElementById('meta-help');
 const metaDate = document.getElementById('meta-date');
 const metaPlace = document.getElementById('meta-place');
 const modeClock = document.getElementById('mode-clock');
@@ -17,9 +18,9 @@ const modePath = document.getElementById('mode-path');
 const peakTitle = document.getElementById('peak-title');
 const hudEle = document.getElementById('hud-ele');
 const hudLight = document.getElementById('hud-light');
-const hudKeepGoing = document.getElementById('hud-keepgoing');
 const btnBackDarkness = document.getElementById('btn-back-darkness');
 const seqTransport = document.getElementById('seq-transport');
+const seqFillToggle = document.getElementById('seq-fill-toggle');
 const seqRew = document.getElementById('seq-rew');
 const seqToggle = document.getElementById('seq-toggle');
 const seqFf = document.getElementById('seq-ff');
@@ -104,8 +105,6 @@ let needsRender = true;
 let raf = 0;
 /** @type {Array<Record<string, unknown>>} */
 let timeline = [];
-/** Indici timeline dei primi 3 video (per scurire i controlli). */
-let firstVideoIdxs = [];
 
 const playback = {
   playing: false,
@@ -212,6 +211,27 @@ function syncMode() {
   syncTitleErase();
   syncMetaWithOrari();
   syncSeqMetrics();
+  syncSeqFillToggle();
+}
+
+function syncSeqFillToggle() {
+  if (!seqFillToggle) return;
+  const onSeq = exp.getMode() === 'sequence';
+  const on = exp.getSeqFillOn?.() ?? true;
+  seqFillToggle.classList.toggle('is-visible', onSeq);
+  seqFillToggle.classList.toggle('is-on', on);
+  seqFillToggle.setAttribute('aria-pressed', on ? 'true' : 'false');
+  seqFillToggle.style.pointerEvents = onSeq ? 'auto' : 'none';
+  const label = seqFillToggle.querySelector('.seq-fill-toggle-label');
+  if (label) label.textContent = on ? 'on' : 'off';
+}
+
+function onSeqFillToggleClick() {
+  if (!ready || exp.getMode() !== 'sequence') return;
+  const next = !(exp.getSeqFillOn?.() ?? true);
+  exp.setSeqFillOn?.(next);
+  syncSeqFillToggle();
+  kick();
 }
 
 /**
@@ -220,12 +240,6 @@ function syncMode() {
  */
 function syncTitleErase() {
   if (!peakTitle) return;
-  if (exp.getMode() === 'intro') {
-    peakTitle.style.opacity = '1';
-    peakTitle.style.visibility = 'visible';
-    return;
-  }
-  // in sequenza il titolo segue la prima immagine nel canvas
   peakTitle.style.opacity = '0';
   peakTitle.style.visibility = 'hidden';
 }
@@ -240,7 +254,7 @@ function syncMetaWithOrari() {
     if (m > 0.02) opacity = Math.max(0, 1 - (m - 0.02) / 0.55);
     if (m > 0.85) opacity = 0;
   }
-  for (const el of [metaCluster, modeClock, modeLight, modePath]) {
+  for (const el of [metaCluster, metaHelp, modeClock, modeLight, modePath]) {
     if (!el) continue;
     el.style.opacity = String(opacity);
     el.style.visibility = opacity > 0.02 ? 'visible' : 'hidden';
@@ -319,7 +333,6 @@ function syncSeqMetrics() {
   if (!hudEle && !hudLight) return;
 
   let opacity = 0;
-  let darkerHud = false;
   if (exp.getMode() === 'sequence') {
     const seq = exp.getSeq();
     const n = Math.max(timeline.length, 1);
@@ -344,8 +357,6 @@ function syncSeqMetrics() {
       dataIdx = i;
     }
 
-    darkerHud = dataIdx >= 1 && dataIdx <= 3;
-
     if (opacity > 0.02) {
       const dataItem = timeline[dataIdx];
       const metrics = metricsForItem(dataItem, timeline);
@@ -362,13 +373,8 @@ function syncSeqMetrics() {
     if (!el) continue;
     el.style.opacity = String(opacity);
     el.style.visibility = opacity > 0.02 ? 'visible' : 'hidden';
-    el.classList.toggle('is-darker', darkerHud);
-  }
-
-  // keep going è WebGL (stesso extract/threshold)
-  if (hudKeepGoing) {
-    hudKeepGoing.style.opacity = '0';
-    hudKeepGoing.style.visibility = 'hidden';
+    el.style.color = '';
+    el.classList.remove('is-darker');
   }
 
   syncBackButton();
@@ -389,17 +395,12 @@ function updateTransportLabels() {
   }
 }
 
-/** Dal 2° file fino al media prima della mucca (peak esclusa). */
+/** Dal 2° file fino al media pre-peak incluso; off appena compare la mucca. */
 function inTransportRange() {
   if (exp.getMode() !== 'sequence') return false;
   const seq = exp.getSeq();
-  return seq >= 1 - 1e-4 && seq < exp.count - 1e-4;
-}
-
-function isOnFirstVideos() {
-  if (exp.getMode() !== 'sequence') return false;
-  const seqIdx = Math.floor(exp.getSeq());
-  return firstVideoIdxs.includes(seqIdx);
+  // count = indice mucca; resta on finché seq ≤ ultimo media (count-1)
+  return seq >= 1 - 1e-4 && seq <= exp.count - 1 + 1e-4;
 }
 
 /** Controlli in basso: scroll = navigazione; pulsanti = solo scrub accelerato. */
@@ -407,31 +408,26 @@ function syncSeqTransport() {
   if (!seqTransport) return;
   updateTransportLabels();
 
-  const seqIdx =
-    exp.getMode() === 'sequence' ? Math.floor(exp.getSeq()) : -1;
-  const darkerHud = seqIdx >= 1 && seqIdx <= 3;
-  const darkerVideo = isOnFirstVideos();
-  const color = darkerVideo ? '#3a3a3a' : darkerHud ? '#7a7a7a' : '#ffffff';
-
-  // prima i hit DOM (per misurare le posizioni), poi paint WebGL allineato
   const inRange = inTransportRange();
-  seqTransport.classList.add('is-hit-only');
-  seqTransport.classList.toggle('is-visible', inRange);
-  seqTransport.setAttribute('aria-hidden', inRange ? 'false' : 'true');
+  const hit = exp.isTransportHitActive?.() ?? inRange;
+  const show = inRange && hit;
+
+  // DOM: bianco + difference (chiaro↔scuro automatico)
+  seqTransport.classList.remove('is-hit-only');
+  seqTransport.classList.toggle('is-visible', show);
+  seqTransport.setAttribute('aria-hidden', show ? 'false' : 'true');
+
+  for (const el of [seqRew, seqToggle, seqFf]) {
+    if (!el) continue;
+    el.style.color = '';
+  }
 
   exp.setTransportLabels?.(
     seqRew?.textContent || '◀◀ ×1',
     seqToggle?.textContent || 'play',
     seqFf?.textContent || '▶▶ ×1',
-    color
+    '#ffffff'
   );
-
-  // durante l’extract pre-peak: hit solo finché il WebGL è ancora leggibile
-  const hit = exp.isTransportHitActive?.() ?? inRange;
-  if (!hit) {
-    seqTransport.classList.remove('is-visible');
-    seqTransport.setAttribute('aria-hidden', 'true');
-  }
 }
 
 function startPlayback(dir, speed) {
@@ -543,7 +539,7 @@ function tickPlayback(now) {
 /** Pie’ di pagina dopo la peak → torna alla landing. */
 function syncBackButton() {
   if (!btnBackDarkness) return;
-  // DOM visibile (difference + GT Cinetype regular, stessa size degli HUD)
+  // DOM visibile (difference + Geist Mono, stessa size degli HUD)
   const hit = exp.isBackHitActive?.() ?? false;
   btnBackDarkness.classList.remove('is-hit-only');
   btnBackDarkness.classList.toggle('is-visible', hit);
@@ -620,10 +616,6 @@ function onResize() {
 async function bootApp() {
   try {
     timeline = await buildTimeline();
-    firstVideoIdxs = timeline
-      .map((item, i) => (item.kind === 'video' ? i : -1))
-      .filter((i) => i >= 0)
-      .slice(0, 3);
     await exp.build(timeline);
     ready = true;
     boot?.classList.add('is-hidden');
@@ -680,6 +672,7 @@ btnBackDarkness?.addEventListener('click', goBackToDarkness);
 modeClock?.addEventListener('click', goClockMode);
 modeLight?.addEventListener('click', goLightMode);
 modePath?.addEventListener('click', goPathMode);
+seqFillToggle?.addEventListener('click', onSeqFillToggleClick);
 seqRew?.addEventListener('click', onRewClick);
 seqFf?.addEventListener('click', onFfClick);
 seqToggle?.addEventListener('click', onToggleClick);

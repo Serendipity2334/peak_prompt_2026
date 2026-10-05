@@ -4,10 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Peak Prompt</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
   <link rel="stylesheet" href="/src/edges/edges.css" />
 </head>
 <body class="edges-page is-landing">
   <canvas id="c"></canvas>
+  <div id="landing-labels" aria-hidden="true"></div>
   <div id="peak-title" aria-hidden="true">
     <div class="peak-line">
       <span>reach</span>
@@ -19,16 +26,12 @@
     </div>
   </div>
   <div id="meta-cluster" aria-hidden="true">
-    <div class="meta-row">
-      <div id="meta-date"></div>
-      <span class="meta-sep">·</span>
-      <div id="meta-place"></div>
-    </div>
-    <div id="meta-help">
-      <span>scroll to enter</span>
-      <span class="meta-sep">·</span>
-      <span>click + drag to explore</span>
-    </div>
+    <div id="meta-date"></div>
+    <div id="meta-place"></div>
+  </div>
+  <div id="meta-help" aria-hidden="true">
+    <span>click + drag to explore</span>
+    <span>scroll to reach the light at the peak</span>
   </div>
   <button type="button" id="mode-clock" class="mode-toggle is-active" aria-pressed="true" aria-label="clock">
     <svg class="mode-toggle-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
@@ -85,6 +88,18 @@
   <div id="hud-light" class="hud-data" aria-hidden="true"></div>
   <div id="hud-keepgoing" class="hud-data" aria-hidden="true">keep going, don't give up</div>
   <div id="hud-worthit" class="hud-data" aria-hidden="true">it was worth it. enjoy the light</div>
+  <button
+    type="button"
+    id="seq-fill-toggle"
+    class="seq-fill-toggle is-on"
+    aria-pressed="true"
+    aria-label="toggle image under edge"
+  >
+    <span class="seq-fill-toggle-track" aria-hidden="true">
+      <span class="seq-fill-toggle-knob"></span>
+    </span>
+    <span class="seq-fill-toggle-label">on</span>
+  </button>
   <div id="seq-transport" aria-hidden="true">
     <button type="button" id="seq-rew" aria-label="indietro">◀◀ ×1</button>
     <button type="button" id="seq-toggle" aria-label="play o stop">play</button>

@@ -4,20 +4,6 @@
   box-sizing: border-box;
 }
 
-/* Tutte le scritte: GT Cinetype Regular (qualsiasi weight richiesto → Regular) */
-@font-face {
-  font-family: 'GT Cinetype';
-  src:
-    local('GT Cinetype Regular'),
-    local('GTCinetype-Regular'),
-    local('GT Cinetype Regular Trial'),
-    local('GT-Cinetype-Regular-Trial'),
-    url('../../assets/fonts/GT-Cinetype-Regular.otf') format('opentype');
-  font-weight: 100 900;
-  font-style: normal;
-  font-display: swap;
-}
-
 html,
 body.edges-page {
   margin: 0;
@@ -26,23 +12,23 @@ body.edges-page {
   overflow: hidden;
   background: #000;
   color: #fff;
-  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
+  --font-ui: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-ui);
   font-weight: 400;
   -webkit-font-smoothing: antialiased;
-  /* sequenza: dati / frasi / transport — stessa misura */
-  --seq-hud-size: 0.85rem;
-  --landing-chrome-size: 0.42rem;
+  /* unica misura testo (come clock / light / path) */
+  --ui-size: 0.42rem;
+  --seq-hud-size: var(--ui-size);
+  --landing-chrome-size: var(--ui-size);
   --seq-hud-weight: 400;
-  --seq-hud-tracking: 0.06em;
-  /* frasi e controlli: leggermente schiacciati in verticale */
-  --seq-squash-y: 0.88;
+  --seq-hud-tracking: 0.04em;
   --seq-hud-line: 1.2;
 }
 
 body.edges-page,
 body.edges-page button,
 body.edges-page input {
-  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
+  font-family: var(--font-ui);
   font-weight: 400;
 }
 
@@ -55,7 +41,38 @@ body.edges-page input {
   touch-action: none;
 }
 
-/* data + luogo + help: angolo in alto a destra */
+/* orari / quote / % landing: DOM Geist Mono (niente canvas pixelato) */
+#landing-labels {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.landing-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  margin: 0;
+  padding: 0;
+  color: #fff;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-weight: 400;
+  font-size: clamp(0.5rem, 0.88vw, 0.68rem);
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-transform: none;
+  mix-blend-mode: difference;
+  -webkit-font-smoothing: antialiased;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  visibility: hidden;
+  will-change: transform, opacity;
+}
+
+/* data + luogo: angolo in alto a destra */
 #meta-cluster {
   position: fixed;
   top: 1.15rem;
@@ -66,10 +83,10 @@ body.edges-page input {
   flex-direction: column;
   align-items: flex-end;
   justify-content: flex-start;
-  gap: 0.35em;
+  gap: 0.2em;
   pointer-events: none;
   color: #fff;
-  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
+  font-family: var(--font-ui);
   font-weight: 400;
   font-size: var(--landing-chrome-size);
   letter-spacing: var(--seq-hud-tracking);
@@ -79,19 +96,7 @@ body.edges-page input {
   text-transform: lowercase;
   mix-blend-mode: difference;
   transform: none;
-  /* opacità guidata da JS (stesso fade degli orari) */
   opacity: 1;
-}
-
-.meta-row,
-#meta-help {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.45em;
-  margin: 0;
-  padding: 0;
 }
 
 #meta-date,
@@ -100,13 +105,38 @@ body.edges-page input {
   padding: 0;
 }
 
+/* istruzioni: angolo in alto a sinistra */
 #meta-help {
+  position: fixed;
+  top: 1.15rem;
+  left: 2.5vw;
+  right: auto;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 0.2em;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+  color: #fff;
+  font-family: var(--font-ui);
+  font-weight: 400;
+  font-size: var(--landing-chrome-size);
+  letter-spacing: var(--seq-hud-tracking);
+  line-height: var(--seq-hud-line);
+  white-space: nowrap;
+  text-align: left;
+  text-transform: lowercase;
+  mix-blend-mode: difference;
   opacity: 0.72;
 }
 
-.meta-sep {
-  opacity: 0.55;
-  user-select: none;
+#meta-help span {
+  display: block;
+  margin: 0;
+  padding: 0;
 }
 
 /* modalità: clock sx / light centro / path dx */
@@ -124,7 +154,7 @@ body.edges-page input {
   border: 0;
   background: transparent;
   color: #fff;
-  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
+  font-family: var(--font-ui);
   font-weight: 400;
   font-size: var(--landing-chrome-size);
   letter-spacing: var(--seq-hud-tracking);
@@ -160,6 +190,75 @@ body.edges-page input {
   right: 2.5vw;
 }
 
+/* sequenza: interruttore on/off in alto al centro */
+.seq-fill-toggle {
+  position: fixed;
+  top: 1.15rem;
+  left: 50%;
+  z-index: 14;
+  display: none;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45em;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-family: var(--font-ui);
+  font-weight: 400;
+  font-size: var(--ui-size);
+  letter-spacing: var(--seq-hud-tracking);
+  line-height: var(--seq-hud-line);
+  text-transform: lowercase;
+  white-space: nowrap;
+  cursor: pointer;
+  mix-blend-mode: difference;
+  transform: translateX(-50%);
+  pointer-events: auto;
+  opacity: 0;
+  visibility: hidden;
+}
+
+body.is-stack .seq-fill-toggle.is-visible {
+  display: inline-flex;
+  opacity: 1;
+  visibility: visible;
+}
+
+.seq-fill-toggle-track {
+  position: relative;
+  width: 1.55em;
+  height: 0.85em;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  opacity: 0.85;
+}
+
+.seq-fill-toggle-knob {
+  position: absolute;
+  top: 50%;
+  left: 0.12em;
+  width: 0.5em;
+  height: 0.5em;
+  border-radius: 50%;
+  background: currentColor;
+  transform: translateY(-50%);
+  transition: left 0.18s ease;
+}
+
+.seq-fill-toggle.is-on .seq-fill-toggle-knob {
+  left: calc(100% - 0.62em);
+}
+
+.seq-fill-toggle-label {
+  min-width: 1.6em;
+  opacity: 1;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
 .hud-data {
   position: fixed;
   top: 50%;
@@ -169,7 +268,7 @@ body.edges-page input {
   padding: 0;
   border: 0;
   color: #fff;
-  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
+  font-family: var(--font-ui);
   font-weight: var(--seq-hud-weight);
   font-size: var(--seq-hud-size);
   font-style: normal;
@@ -177,16 +276,12 @@ body.edges-page input {
   line-height: var(--seq-hud-line);
   white-space: nowrap;
   text-transform: lowercase;
+  /* bianco + difference → chiaro su scuro, scuro su chiaro */
   mix-blend-mode: difference;
   opacity: 0;
   visibility: hidden;
   transform: translateY(-50%);
   /* no transition: opacità allineata frame-by-frame all’extract */
-}
-
-/* slide 2–4: source più scuro → dopo difference il testo si legge meglio */
-.hud-data.is-darker {
-  color: #7a7a7a;
 }
 
 #hud-ele {
@@ -200,47 +295,43 @@ body.edges-page input {
   letter-spacing: var(--seq-hud-tracking);
 }
 
+.hud-data,
+#hud-keepgoing,
+#hud-worthit,
+#seq-transport,
+#seq-transport button,
+#btn-back-darkness {
+  font-family: 'Geist Mono', ui-monospace, monospace !important;
+}
+
+/* frasi centrali: stesso look e fusione (bianco + difference) degli HUD sequenza */
 #hud-keepgoing,
 #hud-worthit {
   left: 50%;
   top: 50%;
   text-align: center;
-  transform: translate(-50%, -50%) scaleY(var(--seq-squash-y));
+  transform: translate(-50%, -50%);
+  font-family: 'Geist Mono', ui-monospace, monospace !important;
   font-size: var(--seq-hud-size);
-  font-weight: var(--seq-hud-weight);
-  letter-spacing: var(--seq-hud-tracking);
-  text-shadow: none;
-}
-
-/* template tipografico per il canvas WebGL keep-going */
-#hud-keepgoing {
-  mix-blend-mode: difference;
-  color: #fff;
   font-weight: 400;
-  /* stessa size di #hud-worthit (--seq-hud-size dal blocco condiviso) */
-  -webkit-text-stroke: 0;
-  text-shadow: none;
-  opacity: 0 !important;
-  visibility: hidden !important;
-}
-
-/* worth-it: difference → scura su chiaro, chiara su scuro */
-#hud-worthit {
-  mix-blend-mode: difference;
-  color: #fff;
+  letter-spacing: var(--seq-hud-tracking);
+  line-height: var(--seq-hud-line);
+  color: #fff !important;
+  mix-blend-mode: difference !important;
   -webkit-text-stroke: 0;
   text-shadow: none;
   opacity: 0;
   visibility: hidden;
   z-index: 14;
-  /* no transition: l’opacità segue frame-by-frame la reveal della mucca */
+  pointer-events: none;
 }
 
+#hud-keepgoing.is-live,
 #hud-worthit.is-live {
   visibility: visible;
 }
 
-/* transport: dal 2° file fino al media prima della peak — stesso look dei dati HUD */
+/* transport: bianco + difference sul contenitore (nitido su chiaro/scuro) */
 #seq-transport {
   position: fixed;
   left: 50%;
@@ -251,8 +342,9 @@ body.edges-page input {
   align-items: center;
   justify-content: center;
   gap: 1.35rem;
-  /* solo translate: lo squash è sul canvas WebGL (scaleY qui sballava il centro) */
   transform: translateX(-50%);
+  color: #fff;
+  mix-blend-mode: difference;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -265,38 +357,21 @@ body.edges-page input {
   pointer-events: auto;
 }
 
-/* hit-area invisibile: il disegno è WebGL (extract + difference) */
-#seq-transport.is-hit-only button {
+#seq-transport button {
   margin: 0;
-  padding: 0.35rem 0.5rem;
+  padding: 0;
   border: 0;
   background: transparent;
-  color: transparent;
-  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
-  font-weight: var(--seq-hud-weight);
-  font-size: var(--seq-hud-size);
+  color: inherit;
+  font-family: var(--font-ui);
+  font-weight: 400;
+  font-size: var(--landing-chrome-size);
   letter-spacing: var(--seq-hud-tracking);
   line-height: var(--seq-hud-line);
   text-transform: lowercase;
   white-space: nowrap;
   cursor: pointer;
-  opacity: 0;
-}
-
-#seq-transport:not(.is-hit-only) button {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #fff;
-  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
-  font-weight: var(--seq-hud-weight);
-  font-size: var(--seq-hud-size);
-  letter-spacing: var(--seq-hud-tracking);
-  line-height: var(--seq-hud-line);
-  text-transform: lowercase;
-  cursor: pointer;
-  mix-blend-mode: difference;
+  -webkit-font-smoothing: antialiased;
 }
 
 #seq-toggle {
@@ -304,7 +379,7 @@ body.edges-page input {
   text-underline-offset: 0.18em;
 }
 
-/* stessa altezza dei mode-toggle in basso */
+/* stessa altezza / tipografia di clock · light · path */
 #btn-back-darkness {
   position: fixed;
   left: 50%;
@@ -316,9 +391,9 @@ body.edges-page input {
   border: 0;
   background: transparent;
   color: #fff;
-  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
+  font-family: var(--font-ui);
   font-weight: 400;
-  font-size: var(--seq-hud-size);
+  font-size: var(--landing-chrome-size);
   font-style: normal;
   letter-spacing: var(--seq-hud-tracking);
   line-height: var(--seq-hud-line);
@@ -328,7 +403,7 @@ body.edges-page input {
   text-underline-offset: 0.18em;
   white-space: nowrap;
   cursor: pointer;
-  transform: translateX(-50%) scaleY(var(--seq-squash-y));
+  transform: translateX(-50%);
   mix-blend-mode: difference;
   opacity: 0;
   visibility: hidden;
@@ -343,17 +418,7 @@ body.edges-page input {
 }
 
 #peak-title {
-  position: fixed;
-  inset: 0;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  pointer-events: none;
-  mix-blend-mode: difference;
-  opacity: 1;
-  visibility: visible;
+  display: none !important;
 }
 
 #peak-title .peak-line {
@@ -363,10 +428,9 @@ body.edges-page input {
   margin: 0;
   padding: 0;
   color: #fff;
-  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
+  font-family: var(--font-ui);
   font-weight: 400;
-  /* Regular, orari + ~20pt */
-  font-size: calc(clamp(0.65rem, 1.55vw, 0.82rem) + 20pt);
+  font-size: var(--ui-size);
   line-height: 1;
   letter-spacing: 0.02em;
   text-transform: lowercase;
@@ -376,7 +440,7 @@ body.edges-page input {
   justify-content: center;
   gap: 0.35em;
   white-space: nowrap;
-  transform: scaleY(var(--seq-squash-y));
+  transform: none;
 }
 
 #peak-title .peak-line span {
@@ -394,8 +458,8 @@ body.edges-page input {
   position: absolute;
   top: 1.25rem;
   left: 1.25rem;
-  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
-  font-size: 0.75rem;
+  font-family: var(--font-ui);
+  font-size: var(--ui-size);
   font-weight: 400;
   letter-spacing: 0.08em;
 }
@@ -405,8 +469,8 @@ body.edges-page input {
   top: 1.25rem;
   right: 1.25rem;
   text-align: right;
-  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
-  font-size: 0.75rem;
+  font-family: var(--font-ui);
+  font-size: var(--ui-size);
   font-weight: 400;
   letter-spacing: 0.06em;
   display: flex;
@@ -416,7 +480,7 @@ body.edges-page input {
 
 #hud-hint {
   opacity: 0.55;
-  font-size: 0.65rem;
+  font-size: var(--ui-size);
 }
 
 .clock-center {
@@ -450,23 +514,23 @@ body.edges-page input {
 }
 
 .clock-title {
-  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
-  font-size: clamp(1.1rem, 3vw, 1.6rem);
+  font-family: var(--font-ui);
+  font-size: var(--ui-size);
   font-weight: 400;
 }
 
 .clock-sub {
   margin-top: 0.45rem;
-  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
-  font-size: 0.65rem;
+  font-family: var(--font-ui);
+  font-size: var(--ui-size);
   font-weight: 400;
   opacity: 0.55;
 }
 
 .clock-cta {
   margin-top: 0.85rem;
-  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
-  font-size: 0.7rem;
+  font-family: var(--font-ui);
+  font-size: var(--ui-size);
   font-weight: 400;
   letter-spacing: 0.14em;
   opacity: 0.75;
@@ -490,8 +554,8 @@ body.is-landing .clock-center.is-dimmed {
   left: 1.25rem;
   color: #fff;
   text-decoration: none;
-  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
-  font-size: 0.75rem;
+  font-family: var(--font-ui);
+  font-size: var(--ui-size);
   font-weight: 400;
   letter-spacing: 0.08em;
   pointer-events: auto;
@@ -509,8 +573,8 @@ body.is-landing .clock-center.is-dimmed {
   place-items: center;
   background: #000;
   color: #fff;
-  font-family: 'GT Cinetype', 'GTCinetype', sans-serif;
-  font-size: 0.8rem;
+  font-family: var(--font-ui);
+  font-size: var(--ui-size);
   font-weight: 400;
   letter-spacing: 0.1em;
   transition: opacity 0.4s ease, visibility 0.4s ease;

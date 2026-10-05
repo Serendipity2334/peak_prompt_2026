@@ -107,15 +107,23 @@ void main() {
   float a = clamp(uOpacity, 0.0, 1.0);
   if (uUseAlpha > 0.5) a *= tex4.a;
 
+  // uEdgeOnly 1→0: sotto l’outline compare gradualmente la foto B/N
+  float edgeAmt = clamp(uEdgeOnly, 0.0, 1.0);
+  float fill = 1.0 - edgeAmt;
+  vec3 fullColor = mix(bw, grade, edge);
+  fullColor += grain(vUv) * uGrain * fill;
+
   vec3 color;
-  if (uEdgeOnly > 0.5) {
-    // solo tratti edge impulse (blu/rosso); resto trasparente
-    if (edge < 0.04) discard;
+  if (edgeAmt > 0.5) {
+    // solo tratti sottili (niente “riempimento” magenta tra i bordi)
+    float line = smoothstep(0.42, 0.85, edge);
+    if (line < 0.08) discard;
     color = grade;
-    a *= clamp(edge, 0.0, 1.0);
+    a *= line;
   } else {
-    color = mix(bw, grade, edge);
-    color += grain(vUv) * uGrain;
+    float edgeMask = clamp(edge, 0.0, 1.0);
+    color = mix(grade, fullColor, fill);
+    a *= mix(edgeMask, 1.0, fill);
   }
   color = clamp(color, 0.0, 1.0);
 

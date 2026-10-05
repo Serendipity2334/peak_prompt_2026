@@ -132,7 +132,7 @@ export function createEdgesScene(canvas) {
         uShadow: { value: Number(item.shadow) || 0 },
         uCover: { value: 1 },
         uOpacity: { value: 1 },
-        uGrain: { value: 0.045 },
+        uGrain: { value: 0.022 },
         uUseAlpha: { value: 0 },
         uRedOnly: { value: 0 },
         uEdgeAmt: { value: 1 },

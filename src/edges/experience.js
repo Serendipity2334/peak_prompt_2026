@@ -337,7 +337,7 @@ void main() {
   float lo = mix(0.01, 0.88, uLift);
   float hi = mix(0.14, 0.995, uLift);
   L = mix(lo, hi, pow(L, mix(1.2, 0.9, uLift)));
-  L += grain(vUv) * mix(0.045, 0.035, uLift);
+  L += grain(vUv) * mix(0.022, 0.016, uLift);
   float dim = mix(uDim, 1.0, uLift);
   L = clamp(L * dim, 0.0, 1.0);
   gl_FragColor = vec4(vec3(L), 1.0);
@@ -379,39 +379,35 @@ function prepTex(texture) {
   return texture;
 }
 
-/** Tipografia sequenza: stessa di .hud-data (GT Cinetype regular, --seq-hud-size). */
+/** Tipografia sequenza / frasi: sempre Geist Mono (DOM + canvas). */
+const UI_FONT = '"Geist Mono", ui-monospace, monospace';
+
 function applySeqHudFont(ctx, probeId = 'hud-ele') {
   const probe = document.getElementById(probeId);
   const cs = probe ? getComputedStyle(probe) : null;
-  if (cs?.fontSize) {
-    ctx.font = `400 ${cs.fontSize} "GT Cinetype", "GTCinetype", sans-serif`;
-    if ('letterSpacing' in ctx) {
-      ctx.letterSpacing = cs.letterSpacing || '0px';
-    }
-    return;
+  const size = cs?.fontSize || `${0.85 * (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16)}px`;
+  const weight = cs?.fontWeight || '400';
+  ctx.font = `${weight} ${size} ${UI_FONT}`;
+  if ('letterSpacing' in ctx) {
+    ctx.letterSpacing = cs?.letterSpacing || '0.04em';
   }
-  const rem =
-    parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-  ctx.font = `400 ${0.85 * rem}px "GT Cinetype", "GTCinetype", sans-serif`;
-  if ('letterSpacing' in ctx) ctx.letterSpacing = `${0.06 * rem}px`;
 }
 
-/** Schiacciamento verticale frasi/controlli (non ele/luce/meta/orari). */
-function seqSquashY() {
-  const v = parseFloat(
-    getComputedStyle(document.documentElement).getPropertyValue('--seq-squash-y')
-  );
-  return Number.isFinite(v) && v > 0 ? v : 0.88;
+async function ensureUiFont() {
+  try {
+    await document.fonts.load(`400 16px "Geist Mono"`);
+    await document.fonts.load(`400 42px "Geist Mono"`);
+    await document.fonts.load(`400 64px "Geist Mono"`);
+    await document.fonts.load(`400 96px "Geist Mono"`);
+    await document.fonts.ready;
+  } catch {
+    /* ignore */
+  }
 }
 
+/** Nessuno schiacciamento verticale. */
 function withSeqSquashY(ctx, cx, cy, draw) {
-  const sy = seqSquashY();
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.scale(1, sy);
-  ctx.translate(-cx, -cy);
   draw();
-  ctx.restore();
 }
 
 function downscaleTexture(texture, maxW = MAX_TEX_W) {
@@ -451,6 +447,8 @@ const CLOCK_PULSE_START = '14:09';
 const _labelCamQ = new THREE.Quaternion();
 const _labelParentQ = new THREE.Quaternion();
 const _labelFaceQ = new THREE.Quaternion();
+const _labelWorld = new THREE.Vector3();
+const _labelProj = new THREE.Vector3();
 const _quatIdentity = new THREE.Quaternion();
 
 /** Luminosità 0..1 (foto/video): guida ordine nuvola light. */
@@ -493,41 +491,65 @@ function formatClockTime(item) {
   return '--:--';
 }
 
-function makeTimeLabel(text) {
-  const w = 360;
-  const h = 80;
-  const dpr = 2;
-  const canvas = document.createElement('canvas');
-  canvas.width = w * dpr;
-  canvas.height = h * dpr;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = 'rgba(255,255,255,0.92)';
-  ctx.font = '400 42px "GT Cinetype", "GTCinetype", sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, w / 2, h / 2);
+/**
+ * Label landing (orari / quote / %): DOM Geist Mono, proiettate in screen space.
+ * @param {string} text
+ */
+function makeDomLandingLabel(text) {
+  const el = document.createElement('span');
+  el.className = 'landing-label';
+  el.textContent = text;
+  el.setAttribute('aria-hidden', 'true');
+  const root = document.getElementById('landing-labels');
+  if (root) root.appendChild(el);
+  else document.body.appendChild(el);
+  return { el, userData: {} };
+}
 
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.generateMipmaps = false;
-  tex.minFilter = THREE.LinearFilter;
-  tex.magFilter = THREE.LinearFilter;
+function hideDomLandingLabel(label) {
+  if (!label?.el) return;
+  label.el.style.opacity = '0';
+  label.el.style.visibility = 'hidden';
+}
 
-  const mat = new THREE.MeshBasicMaterial({
-    map: tex,
-    transparent: true,
-    depthTest: false,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    toneMapped: false
-  });
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
-  mesh.userData.aspect = w / h;
-  mesh.renderOrder = 320;
-  mesh.frustumCulled = false;
-  return mesh;
+/**
+ * @param {{ el: HTMLElement }} label
+ * @param {THREE.Vector3} worldPos
+ * @param {number} opacity
+ * @param {number} [scale]
+ * @param {THREE.Camera} cam
+ */
+function placeDomLandingLabel(label, worldPos, opacity, scale, cam) {
+  const el = label.el;
+  if (opacity <= 0.02) {
+    hideDomLandingLabel(label);
+    return;
+  }
+  _labelProj.copy(worldPos).project(cam);
+  // dietro la camera → fuori; z leggermente fuori [-1,1] resta ok
+  if (_labelProj.z > 1) {
+    hideDomLandingLabel(label);
+    return;
+  }
+  const x = (_labelProj.x * 0.5 + 0.5) * window.innerWidth;
+  const y = (-_labelProj.y * 0.5 + 0.5) * window.innerHeight;
+  if (
+    x < -80 ||
+    y < -40 ||
+    x > window.innerWidth + 80 ||
+    y > window.innerHeight + 40
+  ) {
+    hideDomLandingLabel(label);
+    return;
+  }
+  const s = scale ?? 1;
+  el.style.visibility = 'visible';
+  el.style.opacity = String(opacity);
+  el.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px) scale(${s})`;
+}
+
+function disposeDomLandingLabel(label) {
+  label?.el?.remove();
 }
 
 function loadVideoTexture(src) {
@@ -590,7 +612,7 @@ export function createExperience(canvas) {
     powerPreference: 'high-performance',
     depth: true
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setClearColor(0x000000, 1);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -628,14 +650,14 @@ export function createExperience(canvas) {
   /** Posizioni world per ogni item timeline sul path. */
   let pathSlots = [];
   /** Quote inizio/fine percorso (come gli orari sull’orologio). */
-  /** @type {THREE.Mesh[]} */
+  /** @type {Array<{ el: HTMLElement, userData: Record<string, unknown> }>} */
   let pathEleLabels = [];
   /** Slot nuvola lightRank (u 0=buia → 1=luce + xy organici). */
   /** @type {Array<{ u: number, rank: number, light: number, x: number, y: number, z: number }>} */
   let lightSlots = [];
   /** Indice media più buia (home della raccolta light). */
   let lightHomeIdx = 0;
-  /** @type {THREE.Mesh[]} */
+  /** @type {Array<{ el: HTMLElement, userData: Record<string, unknown> }>} */
   let lightPctLabels = [];
 
   const loader = new THREE.TextureLoader();
@@ -644,8 +666,9 @@ export function createExperience(canvas) {
   let meshes = [];
   /** @type {THREE.Group | null} */
   let clockGroup = null;
-  /** @type {THREE.Mesh[]} */
+  /** @type {Array<{ el: HTMLElement, userData: Record<string, unknown> }>} */
   let clockLabels = [];
+  let clockLabelsVisible = true;
   /** Indice in clockLabels da cui parte il pulse (14:09). */
   let clockPulseStart = 0;
   let clockPulseT0 = 0;
@@ -657,9 +680,9 @@ export function createExperience(canvas) {
   let keepMesh = null;
   /** @type {HTMLCanvasElement | null} */
   let keepCanvas = null;
-  /** Indice timeline per “keep going” (altitudine ~2401); dura 2 media. */
+  /** Indice timeline per “keep going”; dura 5 media a metà sequenza. */
   let keepGoingIndex = -1;
-  const KEEP_GOING_SPAN = 2;
+  const KEEP_GOING_SPAN = 5;
   /** @type {THREE.Mesh | null} */
   let worthMesh = null;
   /** @type {HTMLCanvasElement | null} */
@@ -701,6 +724,8 @@ export function createExperience(canvas) {
   let seq = 0;
   /** @type {'intro' | 'sequence'} */
   let mode = 'intro';
+  /** Sequenza: true = foto/video sotto l’edge; false = solo outline. */
+  let seqFillOn = true;
   let animRaf = 0;
 
   function updateCameraFrustum() {
@@ -797,14 +822,19 @@ export function createExperience(canvas) {
       maxY = Math.max(maxY, Math.abs(p.y));
     }
     const short = Math.min(halfW, halfH);
-    // stesso tipo di pad verticale dell’orologio (meta-date / meta-place)
-    const padY = short * 0.3;
-    const padX = short * 0.14;
+    // pad simmetrico → path più centrato
+    const padY = short * 0.22;
+    const padX = short * 0.12;
     const availX = Math.max(halfW - padX, 0.25);
     const availY = Math.max(halfH - padY, 0.25);
     const sx = availX / Math.max(maxX, 1e-4);
     const sy = availY / Math.max(maxY, 1e-4);
     return Math.min(sx, sy) * 0.9;
+  }
+
+  /** Piccolo offset verso il basso (quasi centrato). */
+  function pathYOffset() {
+    return -Math.min(halfW, halfH) * 0.02;
   }
 
   /** Semiassi nuvola light 3D (pad meta / toggle). */
@@ -1010,38 +1040,34 @@ export function createExperience(canvas) {
   async function buildPathEleLabels() {
     disposePathEleLabels();
     if (!pathRoute?.points?.length) return;
-    try {
-      await document.fonts.load('400 42px "GT Cinetype"');
-      await document.fonts.ready;
-    } catch {
-      /* ignore */
-    }
+    await ensureUiFont();
     const samples = pickPathEleSamples();
     pathEleLabels = [];
     for (const s of samples) {
-      const label = makeTimeLabel(formatPathEleLabel(s.meters));
+      const label = makeDomLandingLabel(formatPathEleLabel(s.meters));
       label.userData.pathT = s.t;
-      label.material.depthTest = false;
-      label.material.depthWrite = false;
-      label.renderOrder = 330;
-      ringRoot.add(label);
       pathEleLabels.push(label);
     }
   }
 
   function layoutPathEleLabels(m) {
-    if (!pathEleLabels.length || !pathRoute?.points?.length) return;
+    if (!pathEleLabels.length || !pathRoute?.points?.length) {
+      for (const label of pathEleLabels) hideDomLandingLabel(label);
+      return;
+    }
     let opacity = 1;
     if (m > 0.02) opacity = Math.max(0, 1 - (m - 0.02) / 0.55);
     if (m > 0.85) opacity = 0;
+    if (landingView !== 'path' || opacity <= 0.02) {
+      for (const label of pathEleLabels) hideDomLandingLabel(label);
+      return;
+    }
 
     const short = Math.min(halfW, halfH);
     const labelW = landingLabelWidth();
     const cam = activeCamera();
-    cam.getWorldQuaternion(_labelCamQ);
     ringRoot.updateWorldMatrix(true, false);
-    ringRoot.getWorldQuaternion(_labelParentQ);
-    _labelFaceQ.copy(_labelParentQ).invert().multiply(_labelCamQ);
+    const yOff = pathYOffset();
 
     for (const label of pathEleLabels) {
       const t = Number.isFinite(label.userData.pathT) ? label.userData.pathT : 0;
@@ -1049,54 +1075,34 @@ export function createExperience(canvas) {
       const outward = tip
         ? short * 0.028 + labelW * 0.1
         : short * 0.05 + labelW * 0.16;
-      // pathAtT già in spazio scalato (= linea * pathFitScale)
       const pos = pathLabelWorldPos(t, outward);
-      const aspect = label.userData.aspect || 4;
-      const lh = labelW / aspect;
-      label.position.set(pos.x, pos.y, pos.z);
-      label.scale.set(labelW, lh, 1);
-      label.quaternion.copy(_labelFaceQ);
-      label.material.opacity = opacity;
-      label.visible = opacity > 0.02 && landingView === 'path';
+      _labelWorld.set(pos.x, pos.y + yOff, pos.z);
+      ringRoot.localToWorld(_labelWorld);
+      placeDomLandingLabel(label, _labelWorld, opacity, 1, cam);
     }
   }
 
   function disposePathEleLabels() {
-    for (const label of pathEleLabels) {
-      label.removeFromParent();
-      label.material.map?.dispose();
-      label.material.dispose();
-      label.geometry.dispose();
-    }
+    for (const label of pathEleLabels) disposeDomLandingLabel(label);
     pathEleLabels = [];
   }
 
   function disposeLightPctLabels() {
-    for (const label of lightPctLabels) {
-      label.removeFromParent();
-      label.material.map?.dispose();
-      label.material.dispose();
-      label.geometry.dispose();
-    }
+    for (const label of lightPctLabels) disposeDomLandingLabel(label);
     lightPctLabels = [];
   }
 
   async function buildLightPctLabels() {
     disposeLightPctLabels();
+    await ensureUiFont();
     try {
-      await document.fonts.load('400 42px "GT Cinetype"');
-      await document.fonts.ready;
+      for (const pct of LIGHT_PCT_MARKS) {
+        const label = makeDomLandingLabel(formatLightPct(pct));
+        label.userData.lightU = pct / 100;
+        lightPctLabels.push(label);
+      }
     } catch {
       /* ignore */
-    }
-    for (const pct of LIGHT_PCT_MARKS) {
-      const label = makeTimeLabel(formatLightPct(pct));
-      label.userData.lightU = pct / 100;
-      label.material.depthTest = false;
-      label.material.depthWrite = false;
-      label.renderOrder = 330;
-      ringRoot.add(label);
-      lightPctLabels.push(label);
     }
   }
 
@@ -1105,15 +1111,15 @@ export function createExperience(canvas) {
     let opacity = 1;
     if (m > 0.02) opacity = Math.max(0, 1 - (m - 0.02) / 0.55);
     if (m > 0.85) opacity = 0;
+    if (landingView !== 'light' || opacity <= 0.02) {
+      for (const label of lightPctLabels) hideDomLandingLabel(label);
+      return;
+    }
 
     const short = Math.min(halfW, halfH);
     const { hx, hy } = lightCloudFit();
-    const labelW = landingLabelWidth();
     const cam = activeCamera();
-    cam.getWorldQuaternion(_labelCamQ);
     ringRoot.updateWorldMatrix(true, false);
-    ringRoot.getWorldQuaternion(_labelParentQ);
-    _labelFaceQ.copy(_labelParentQ).invert().multiply(_labelCamQ);
 
     const tile = sizeWithAspect(short * 0.16, 1.2);
     const y = -(hy * 0.72 + tile.h * 0.28 + short * 0.02);
@@ -1123,13 +1129,9 @@ export function createExperience(canvas) {
         ? label.userData.lightU
         : 0;
       const x = (u - 0.5) * 2 * hx;
-      const aspect = label.userData.aspect || 4;
-      const lh = labelW / aspect;
-      label.position.set(x, y, 0.12);
-      label.scale.set(labelW, lh, 1);
-      label.quaternion.copy(_labelFaceQ);
-      label.material.opacity = opacity;
-      label.visible = opacity > 0.02 && landingView === 'light';
+      _labelWorld.set(x, y, 0.12);
+      ringRoot.localToWorld(_labelWorld);
+      placeDomLandingLabel(label, _labelWorld, opacity, 1, cam);
     }
   }
 
@@ -1155,11 +1157,11 @@ export function createExperience(canvas) {
           if (mode === 'intro') layout();
         })
         .catch((err) => console.warn('[edges] percorso GPX', err));
-      for (const label of lightPctLabels) label.visible = false;
+      for (const label of lightPctLabels) hideDomLandingLabel(label);
     } else if (next === 'light') {
       if (pathLine) {
         pathLine.visible = false;
-        for (const label of pathEleLabels) label.visible = false;
+        for (const label of pathEleLabels) hideDomLandingLabel(label);
       }
       rebuildLightSlots();
       if (!lightPctLabels.length) {
@@ -1170,9 +1172,10 @@ export function createExperience(canvas) {
     } else {
       if (pathLine) {
         pathLine.visible = false;
-        for (const label of pathEleLabels) label.visible = false;
+        for (const label of pathEleLabels) hideDomLandingLabel(label);
       }
-      for (const label of lightPctLabels) label.visible = false;
+      for (const label of lightPctLabels) hideDomLandingLabel(label);
+      setClockVisible(true);
     }
     if (mode === 'intro') {
       intro = Math.min(intro, 0.001);
@@ -1470,6 +1473,7 @@ export function createExperience(canvas) {
     const n = items.length;
     if (!n) return;
 
+    await ensureUiFont();
     updateCameraFrustum();
     fullJobs.clear();
 
@@ -1516,17 +1520,13 @@ export function createExperience(canvas) {
       worthItIndex = -1;
     }
 
-    // testo “keep going” sull’immagine a ~2401 m
-    const ELE_MIN = 2065;
-    const ELE_MAX = 2717;
-    const TARGET_ELE = 2401;
-    keepGoingIndex = Math.min(
-      n - 1,
-      Math.max(
-        0,
-        Math.round(((TARGET_ELE - ELE_MIN) / (ELE_MAX - ELE_MIN)) * (n - 1))
-      )
-    );
+    // “keep going” per 5 media consecutive, ~metà sequenza ma 2 media prima
+    {
+      const span = KEEP_GOING_SPAN;
+      const startMax = Math.max(0, n - span);
+      const midStart = Math.round((n - span) * 0.5) - 2;
+      keepGoingIndex = Math.min(startMax, Math.max(0, midStart));
+    }
 
     intro = 0;
     seq = 0;
@@ -1589,17 +1589,21 @@ export function createExperience(canvas) {
       flattenRingRoot();
       layoutSequence(fullW, fullH);
       setClockVisible(false);
-      for (const label of lightPctLabels) label.visible = false;
+      for (const label of lightPctLabels) hideDomLandingLabel(label);
       if (pathLine) pathLine.visible = false;
-      for (const label of pathEleLabels) label.visible = false;
+      for (const label of pathEleLabels) hideDomLandingLabel(label);
       layoutTitleOverlay();
       layoutKeepGoingOverlay();
       layoutWorthItOverlay();
       layoutBackOverlay();
       layoutTransportOverlay();
       layoutMorphBg();
-      // visibilità gestita da tickMorphBg (off in mezzo, on al finale chiaro)
-      if (!isEndReveal()) setMorphBgVisible(false);
+      // fill off: sfondo nero→bianco sotto gli edge; altrimenti solo al finale
+      if (!seqFillOn || isEndReveal()) {
+        /* tickMorphBg gestisce */
+      } else {
+        setMorphBgVisible(false);
+      }
       updateDetailMix();
       return;
     }
@@ -1607,6 +1611,7 @@ export function createExperience(canvas) {
     if (titleMesh) titleMesh.visible = false;
     if (keepMesh) keepMesh.visible = false;
     if (worthMesh) worthMesh.visible = false;
+    syncKeepGoingDom(false);
     syncWorthItDom(false);
     if (backMesh) backMesh.visible = false;
     backHitActive = false;
@@ -1681,18 +1686,20 @@ export function createExperience(canvas) {
       if (pathLine) {
         // scala uniforme: linea e media condividono lo stesso spazio
         pathLine.scale.setScalar(pathScale);
+        pathLine.position.y = pathYOffset();
         pathLine.visible = m < 0.85;
         pathLine.material.opacity =
           0.82 * (1 - m) * (0.55 + 0.45 * (1 - g));
       }
       setClockVisible(false);
-      for (const label of lightPctLabels) label.visible = false;
+      for (const label of lightPctLabels) hideDomLandingLabel(label);
     } else if (landingView === 'light') {
       if (pathLine) {
         pathLine.visible = false;
         pathLine.scale.setScalar(1);
+        pathLine.position.y = 0;
       }
-      for (const label of pathEleLabels) label.visible = false;
+      for (const label of pathEleLabels) hideDomLandingLabel(label);
       if (!lightSlots.length) rebuildLightSlots();
       layoutLightTiles({
         n,
@@ -1711,9 +1718,11 @@ export function createExperience(canvas) {
       if (pathLine) {
         pathLine.visible = false;
         pathLine.scale.setScalar(1);
+        pathLine.position.y = 0;
       }
-      for (const label of pathEleLabels) label.visible = false;
-      for (const label of lightPctLabels) label.visible = false;
+      for (const label of pathEleLabels) hideDomLandingLabel(label);
+      for (const label of lightPctLabels) hideDomLandingLabel(label);
+      setClockVisible(true);
       layoutClockTiles({
         n,
         g,
@@ -1779,7 +1788,7 @@ export function createExperience(canvas) {
         mesh.material.uniforms.uCover.value = 0;
         mesh.material.uniforms.uOpacity.value = 1;
         mesh.material.uniforms.uCutoff.value = 1;
-        mesh.material.uniforms.uGrain.value = 0.045 * m;
+        mesh.material.uniforms.uGrain.value = 0.022 * m;
         mesh.renderOrder = n + 20;
         mesh.visible = true;
       } else {
@@ -1822,12 +1831,13 @@ export function createExperience(canvas) {
     const slot0 = pathSlots[0] || { x: 0, y: 0, z: 0, t: 0 };
     const tHome = Number.isFinite(slot0.t) ? slot0.t : 0;
     const fit = pathScale || pathFitScale();
+    const yOff = pathYOffset();
     const homeAlong = pathRoute
       ? (() => {
           const p = pathRoute.atT(tHome);
-          return { x: p.x * fit, y: p.y * fit, z: p.z * fit };
+          return { x: p.x * fit, y: p.y * fit + yOff, z: p.z * fit };
         })()
-      : slot0;
+      : { ...slot0, y: (slot0.y || 0) + yOff };
     const homeX = homeAlong.x;
     const homeY = homeAlong.y;
     const homeZ = (homeAlong.z ?? 0) + 0.02;
@@ -1838,7 +1848,7 @@ export function createExperience(canvas) {
     }
     const lastMedia = Math.max(mediaCount - 1, 1);
 
-    const pathTileScale = 0.58;
+    const pathTileScale = 0.64;
     const gathering = g > 0.012 || m > 0.01;
     const pathFloat = gathering ? 0 : floatStr * 0.2;
 
@@ -1876,7 +1886,7 @@ export function createExperience(canvas) {
         mesh.material.uniforms.uCover.value = 0;
         mesh.material.uniforms.uOpacity.value = 1;
         mesh.material.uniforms.uCutoff.value = 1;
-        mesh.material.uniforms.uGrain.value = 0.045 * m;
+        mesh.material.uniforms.uGrain.value = 0.022 * m;
         mesh.renderOrder = n + 20;
         mesh.visible = true;
       } else {
@@ -1900,11 +1910,11 @@ export function createExperience(canvas) {
         if (pathRoute) {
           const p = pathRoute.atT(tAlong);
           x = p.x * fit;
-          y = p.y * fit;
+          y = p.y * fit + yOff;
           z = p.z * fit + 0.02 - stack;
         } else {
           x = homeX + ((slot.x || 0) * fit - homeX) * spacing;
-          y = homeY + ((slot.y || 0) * fit - homeY) * spacing;
+          y = homeY + ((slot.y || 0) * fit + yOff - homeY) * spacing;
           z = homeZ - stack;
         }
 
@@ -1951,9 +1961,10 @@ export function createExperience(canvas) {
     const homeY = home.y;
     const homeZ = home.z;
 
-    const lightTileScale = 0.82;
+    const lightTileScale = 0.98;
     const gathering = g > 0.012 || m > 0.01;
-    const edgeOnly = m < 0.55 ? 1 : 0;
+    // outline → foto: rivelazione lenta durante quasi tutto lo zoom
+    const edgeOnly = 1 - THREE.MathUtils.smoothstep(0.05, 0.98, m);
     const explore = !gathering;
 
     for (let i = 0; i < n; i++) {
@@ -1997,7 +2008,7 @@ export function createExperience(canvas) {
         mesh.material.uniforms.uCover.value = 0;
         mesh.material.uniforms.uOpacity.value = 1;
         mesh.material.uniforms.uCutoff.value = 1;
-        mesh.material.uniforms.uGrain.value = 0.045 * m;
+        mesh.material.uniforms.uGrain.value = 0.022 * m;
         mesh.renderOrder =
           m > 0.01 || isHome ? n + 20 : n - ord;
         mesh.visible = true;
@@ -2040,7 +2051,10 @@ export function createExperience(canvas) {
   }
 
   function setClockVisible(on) {
-    if (clockGroup) clockGroup.visible = on;
+    clockLabelsVisible = on;
+    if (!on) {
+      for (const label of clockLabels) hideDomLandingLabel(label);
+    }
   }
 
   /**
@@ -2052,14 +2066,10 @@ export function createExperience(canvas) {
     if (!list.length) return;
 
     try {
-      await document.fonts.load('400 42px "GT Cinetype"');
-      await document.fonts.ready;
+      await ensureUiFont();
     } catch {
-      /* fallback: canvas userà il sans di sistema */
+      /* fallback browser */
     }
-
-    clockGroup = new THREE.Group();
-    clockGroup.renderOrder = -20;
 
     const n = list.length;
     const wedgeFirst = new Array(CLOCK_WEDGES).fill(-1);
@@ -2074,15 +2084,10 @@ export function createExperience(canvas) {
       if (i0 < 0) continue;
       const angle = Math.PI / 2 - (k / CLOCK_WEDGES) * Math.PI * 2;
       const timeText = formatClockTime(list[i0]);
-      const label = makeTimeLabel(timeText);
+      const label = makeDomLandingLabel(timeText);
       label.userData.angle = angle;
       label.userData.wedge = k;
       label.userData.timeText = timeText;
-      // sempre sopra le tile; orientamento billboard in layoutClockFace
-      label.material.depthTest = false;
-      label.material.depthWrite = false;
-      label.renderOrder = 320;
-      clockGroup.add(label);
       clockLabels.push(label);
     }
 
@@ -2092,12 +2097,14 @@ export function createExperience(canvas) {
     );
     clockPulseStart = startIdx >= 0 ? startIdx : 0;
     clockPulseT0 = performance.now();
-
-    ringRoot.add(clockGroup);
+    clockLabelsVisible = true;
   }
 
   function layoutClockFace(m) {
-    if (!clockGroup) return;
+    if (!clockLabels.length || !clockLabelsVisible) {
+      for (const label of clockLabels) hideDomLandingLabel(label);
+      return;
+    }
     const short = Math.min(halfW, halfH);
     const labelW = landingLabelWidth();
     // appena fuori dalla raggiera delle tile
@@ -2108,6 +2115,10 @@ export function createExperience(canvas) {
     let opacity = 1;
     if (m > 0.02) opacity = Math.max(0, 1 - (m - 0.02) / 0.55);
     if (m > 0.85) opacity = 0;
+    if (opacity <= 0.02) {
+      for (const label of clockLabels) hideDomLandingLabel(label);
+      return;
+    }
 
     const nLab = clockLabels.length;
     const step =
@@ -2118,20 +2129,12 @@ export function createExperience(canvas) {
         : 0;
     const active = nLab > 0 ? (clockPulseStart + step) % nLab : 0;
     const cam = activeCamera();
-    cam.getWorldQuaternion(_labelCamQ);
-    if (clockGroup.parent) {
-      clockGroup.parent.updateWorldMatrix(true, false);
-      clockGroup.parent.getWorldQuaternion(_labelParentQ);
-    } else {
-      _labelParentQ.identity();
-    }
-    // quaternion locale = inverse(parent) * camera → testo sempre verso la vista
-    _labelFaceQ.copy(_labelParentQ).invert().multiply(_labelCamQ);
+    ringRoot.updateWorldMatrix(true, false);
 
     for (let i = 0; i < nLab; i++) {
       const label = clockLabels[i];
-      const a = label.userData.angle;
-      const aspect = label.userData.aspect || 4;
+      const a = Number(label.userData.angle) || 0;
+      const aspect = 4.5;
       const lw = labelW;
       const lh = lw / aspect;
       const labelIn =
@@ -2141,24 +2144,17 @@ export function createExperience(canvas) {
       const r = Math.min(rLabel + labelIn * 0.05, maxR);
       const lit = i === active ? 1 : CLOCK_PULSE_DIM;
       const pop = i === active ? 1.08 : 1;
-      label.position.set(Math.cos(a) * r, Math.sin(a) * r, 0.05);
-      label.scale.set(lw * pop, lh * pop, 1);
-      label.quaternion.copy(_labelFaceQ);
-      label.material.opacity = opacity * lit;
-      label.visible = opacity > 0.02;
+      _labelWorld.set(Math.cos(a) * r, Math.sin(a) * r, 0.05);
+      ringRoot.localToWorld(_labelWorld);
+      placeDomLandingLabel(label, _labelWorld, opacity * lit, pop, cam);
     }
-    clockGroup.visible = opacity > 0.02;
   }
 
   function disposeClock() {
-    if (clockGroup) clockGroup.removeFromParent();
-    for (const label of clockLabels) {
-      label.material.map?.dispose();
-      label.material.dispose();
-      label.geometry.dispose();
-    }
+    for (const label of clockLabels) disposeDomLandingLabel(label);
     clockLabels = [];
     clockGroup = null;
+    clockLabelsVisible = true;
     clockPulseStart = 0;
     clockPulseT0 = 0;
   }
@@ -2196,13 +2192,13 @@ export function createExperience(canvas) {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
 
-    // misura senza scaleY DOM, poi schiaccia in canvas come il CSS
+    // misura posizioni DOM, poi disegna in canvas
     const spans = document.querySelectorAll('#peak-title .peak-line > span');
     const line = document.querySelector('#peak-title .peak-line');
     if (spans.length && line) {
       line.style.transform = 'none';
       const cs = getComputedStyle(line);
-      ctx.font = `400 ${cs.fontSize} "GT Cinetype", "GTCinetype", sans-serif`;
+      ctx.font = `400 ${cs.fontSize} "Geist Mono", ui-monospace, monospace`;
       if ('letterSpacing' in ctx) ctx.letterSpacing = cs.letterSpacing || '0px';
       const xs = Array.from(spans, (span) => span.getBoundingClientRect().left);
       const baseY = readDomBaselineY(line);
@@ -2219,7 +2215,7 @@ export function createExperience(canvas) {
 
     // fallback se il DOM non è pronto — blocco centrato
     const fontPx = Math.min(cssW * 0.045, 36);
-    ctx.font = `400 ${fontPx}px "GT Cinetype", "GTCinetype", sans-serif`;
+    ctx.font = `400 ${fontPx}px "Geist Mono", ui-monospace, monospace`;
     if ('letterSpacing' in ctx) ctx.letterSpacing = `${fontPx * 0.02}px`;
     const gap = fontPx * 0.35;
     const widths = TITLE_WORDS.map((word) => ctx.measureText(word).width);
@@ -2240,7 +2236,7 @@ export function createExperience(canvas) {
   async function buildTitleOverlay() {
     disposeTitleOverlay();
     try {
-      await document.fonts.load('400 18px "GT Cinetype"');
+      await document.fonts.load('400 18px "Geist Mono"');
       await document.fonts.ready;
     } catch {
       /* ignore */
@@ -2279,29 +2275,7 @@ export function createExperience(canvas) {
   }
 
   function layoutTitleOverlay() {
-    if (!titleMesh || !meshes[0]) {
-      if (titleMesh) titleMesh.visible = false;
-      return;
-    }
-    const mesh0 = meshes[0];
-    const { w: fullW, h: fullH } = viewSize();
-    // transform fisso a viewport — non dipende dal cutoff
-    titleMesh.position.set(0, 0, 0.03);
-    titleMesh.scale.set(fullW, fullH, 1);
-    titleMesh.rotation.set(0, 0, 0);
-
-    const src = mesh0.material.uniforms;
-    const mat = titleMesh.material;
-    mat.uniforms.uMap.value = src.uMap.value;
-    mat.uniforms.uMapHi.value = src.uMapHi.value;
-    mat.uniforms.uDetailMix.value = src.uDetailMix.value;
-    mat.uniforms.uCutoff.value = src.uCutoff.value;
-    mat.uniforms.uImageSize.value.copy(src.uImageSize.value);
-    mat.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
-
-    const cutoff = src.uCutoff.value;
-    titleMesh.visible =
-      mode === 'sequence' && mesh0.visible && cutoff > 0.001;
+    if (titleMesh) titleMesh.visible = false;
   }
 
   /** Congela il titolo sulla posizione DOM corrente (chiamare prima di nascondere il DOM). */
@@ -2355,7 +2329,7 @@ export function createExperience(canvas) {
   async function buildKeepGoingOverlay() {
     disposeKeepGoingOverlay();
     try {
-      await document.fonts.load('400 16px "GT Cinetype"');
+      await document.fonts.load('400 16px "Geist Mono"');
       await document.fonts.ready;
     } catch {
       /* ignore */
@@ -2400,74 +2374,42 @@ export function createExperience(canvas) {
   }
 
   function layoutKeepGoingOverlay() {
-    if (!keepMesh || keepGoingIndex < 0 || mode !== 'sequence') {
-      if (keepMesh) keepMesh.visible = false;
+    if (keepMesh) keepMesh.visible = false;
+
+    if (keepGoingIndex < 0 || mode !== 'sequence') {
+      syncKeepGoingDom(false);
       return;
     }
 
     const i0 = keepGoingIndex;
     const i1 = Math.min(i0 + KEEP_GOING_SPAN - 1, items.length - 1);
     const p = seq;
-    // finestra: reveal del 1° → resta su 2 media → extract del 2°
+    // finestra: reveal del 1° → resta su 5 media → extract dell’ultima
     if (p <= i0 - 1 || p >= i1 + 1) {
-      keepMesh.visible = false;
+      syncKeepGoingDom(false);
       return;
     }
 
-    let hostIdx = i0;
-    let cutoff = 1;
-    let usePrev = 0;
-    let prevIdx = -1;
-    let prevCutoff = 0;
-
+    let opacity = 1;
     if (p < i0) {
-      // compare nei buchi dell’extract della slide precedente
-      hostIdx = i0;
-      cutoff = 1;
-      usePrev = 1;
-      prevIdx = i0 - 1;
-      prevCutoff = 1 - (p - (i0 - 1));
-    } else if (p < i1) {
-      // sulle due media: testo pieno (non segue l’erase del 1°)
-      hostIdx = p >= i0 + 1 ? i1 : i0;
-      cutoff = 1;
-    } else {
-      // scompare con l’extract della 2ª media
-      hostIdx = i1;
-      cutoff = 1 - (p - i1);
+      opacity = Math.min(Math.max(p - (i0 - 1), 0), 1);
+    } else if (p >= i1) {
+      opacity = Math.max(0, 1 - (p - i1));
     }
 
-    const mesh = meshes[hostIdx];
-    if (!mesh || mesh.userData.isEndSlide) {
-      keepMesh.visible = false;
-      return;
-    }
+    syncKeepGoingDom(opacity > 0.02, opacity);
+  }
 
-    const { w: fullW, h: fullH } = viewSize();
-    keepMesh.position.set(0, 0, 0.035);
-    keepMesh.scale.set(fullW, fullH, 1);
-    keepMesh.rotation.set(0, 0, 0);
-
-    const src = mesh.material.uniforms;
-    const mat = keepMesh.material;
-    mat.uniforms.uMap.value = src.uMap.value;
-    mat.uniforms.uMapHi.value = src.uMapHi.value;
-    mat.uniforms.uDetailMix.value = src.uDetailMix.value;
-    mat.uniforms.uCutoff.value = cutoff;
-    mat.uniforms.uImageSize.value.copy(src.uImageSize.value);
-    mat.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
-    mat.uniforms.uUsePrev.value = usePrev;
-
-    if (usePrev && prevIdx >= 0 && meshes[prevIdx]) {
-      const prev = meshes[prevIdx].material.uniforms;
-      mat.uniforms.uPrevMap.value = prev.uMap.value;
-      mat.uniforms.uPrevMapHi.value = prev.uMapHi.value;
-      mat.uniforms.uPrevDetail.value = prev.uDetailMix.value;
-      mat.uniforms.uPrevCutoff.value = prevCutoff;
-      mat.uniforms.uPrevSize.value.copy(prev.uImageSize.value);
-    }
-
-    keepMesh.visible = cutoff > 0.001;
+  /** Keep-going DOM: stesso look/posizione/fusione di worth-it e HUD sequenza. */
+  function syncKeepGoingDom(live, opacity = 1) {
+    const el = document.getElementById('hud-keepgoing');
+    if (!el) return;
+    el.classList.toggle('is-live', live);
+    el.classList.remove('is-on-light', 'is-darker');
+    el.style.color = '#fff';
+    el.style.mixBlendMode = 'difference';
+    el.style.opacity = live ? String(opacity) : '';
+    el.setAttribute('aria-hidden', live ? 'false' : 'true');
   }
 
   function captureKeepGoingFromDom() {
@@ -2478,6 +2420,7 @@ export function createExperience(canvas) {
   }
 
   function disposeKeepGoingOverlay() {
+    syncKeepGoingDom(false);
     if (keepMesh) {
       scene.remove(keepMesh);
       keepMesh.material.uniforms.uTitle.value?.dispose();
@@ -2523,7 +2466,7 @@ export function createExperience(canvas) {
   async function buildWorthItOverlay() {
     disposeWorthItOverlay();
     try {
-      await document.fonts.load('400 16px "GT Cinetype"');
+      await document.fonts.load('400 16px "Geist Mono"');
       await document.fonts.ready;
     } catch {
       /* ignore */
@@ -2574,7 +2517,9 @@ export function createExperience(canvas) {
     const el = document.getElementById('hud-worthit');
     if (!el) return;
     el.classList.toggle('is-live', live);
-    el.classList.remove('is-on-light');
+    el.classList.remove('is-on-light', 'is-darker');
+    el.style.color = '#fff';
+    el.style.mixBlendMode = 'difference';
     el.style.opacity = live ? String(opacity) : '';
     el.setAttribute('aria-hidden', live ? 'false' : 'true');
   }
@@ -2667,7 +2612,7 @@ export function createExperience(canvas) {
   async function buildBackOverlay() {
     disposeBackOverlay();
     try {
-      await document.fonts.load('400 16px "GT Cinetype"');
+      await document.fonts.load('400 16px "Geist Mono"');
       await document.fonts.ready;
     } catch {
       /* ignore */
@@ -2714,8 +2659,8 @@ export function createExperience(canvas) {
   }
 
   /**
-   * Back to darkness: DOM a pie’ di pagina (stesso font degli HUD).
-   * Visibile da quando la mucca inizia a estrarsi, poi sul bianco.
+   * Back to darkness: stessa altezza di clock/light/path.
+   * Compare appena compare la mucca, poi resta sul bianco.
    */
   function layoutBackOverlay() {
     if (backMesh) backMesh.visible = false;
@@ -2725,14 +2670,8 @@ export function createExperience(canvas) {
 
     const i0 = worthItIndex;
     const p = seq;
-    // da extract mucca in poi
-    if (p < i0) return;
-
-    if (p < i0 + 1) {
-      const prevCutoff = 1 - (p - i0);
-      backHitActive = prevCutoff < 0.92;
-      return;
-    }
+    // nascosto finché non inizia a comparire la mucca
+    if (p <= i0 - 1) return;
 
     backHitActive = true;
   }
@@ -2771,27 +2710,27 @@ export function createExperience(canvas) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
 
-    // stesso size degli HUD; schiacciato come i bottoni transport
+    // Geist Mono, stessa size HUD; difference in WebGL (no stroke)
     applySeqHudFont(ctx, 'hud-ele');
     const ink = transportLabels.color || '#ffffff';
     ctx.fillStyle = ink;
     ctx.strokeStyle = ink;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const rem =
-      parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-    ctx.lineWidth = Math.max(1, rem * 0.06);
+    const probe = document.getElementById('hud-ele');
+    const fs = probe
+      ? parseFloat(getComputedStyle(probe).fontSize) || 12
+      : 12;
+    ctx.lineWidth = Math.max(1, fs * 0.08);
 
     const paintLabel = (text, x, y, underline) => {
-      withSeqSquashY(ctx, x, y, () => {
-        ctx.fillText(text, x, y);
-        if (!underline) return;
-        const tw = ctx.measureText(text).width;
-        ctx.beginPath();
-        ctx.moveTo(x - tw * 0.5, y + rem * 0.55);
-        ctx.lineTo(x + tw * 0.5, y + rem * 0.55);
-        ctx.stroke();
-      });
+      ctx.fillText(text, x, y);
+      if (!underline) return;
+      const tw = ctx.measureText(text).width;
+      ctx.beginPath();
+      ctx.moveTo(x - tw * 0.5, y + fs * 0.55);
+      ctx.lineTo(x + tw * 0.5, y + fs * 0.55);
+      ctx.stroke();
     };
 
     // allinea ai hit-target DOM (#seq-rew / toggle / ff)
@@ -2809,11 +2748,12 @@ export function createExperience(canvas) {
       if (r.width < 1 && r.height < 1) continue;
       const x = r.left + r.width * 0.5;
       const y = r.top + r.height * 0.5;
-      // play/stop sottolineato (come back to darkness)
       paintLabel(texts[i], x, y, ids[i] === 'seq-toggle');
       painted = true;
     }
     if (!painted) {
+      const rem =
+        parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
       const y = cssH - 1.15 * rem;
       const gap = Math.min(cssW * 0.12, 96);
       const cx = cssW * 0.5;
@@ -2826,7 +2766,7 @@ export function createExperience(canvas) {
   async function buildTransportOverlay() {
     disposeTransportOverlay();
     try {
-      await document.fonts.load('400 14px "GT Cinetype"');
+      await document.fonts.load('400 14px "Geist Mono"');
       await document.fonts.ready;
     } catch {
       /* ignore */
@@ -2871,59 +2811,20 @@ export function createExperience(canvas) {
   }
 
   /**
-   * Controlli: pieni dal 2° file; scompaiono con extract del media prima della mucca.
+   * Controlli: DOM (nitido). Hit attivo dal 2° file fino al media pre-peak;
+   * off appena la mucca inizia a comparire.
    */
   function layoutTransportOverlay() {
+    if (transportMesh) transportMesh.visible = false;
     transportHitActive = false;
-    if (!transportMesh || worthItIndex < 1 || mode !== 'sequence') {
-      if (transportMesh) transportMesh.visible = false;
-      return;
-    }
 
-    const iPen = worthItIndex - 1; // video/foto subito prima della peak
+    if (worthItIndex < 1 || mode !== 'sequence') return;
+
+    const iPen = worthItIndex - 1;
     const p = seq;
-    if (p < 1 - 1e-4 || p >= iPen + 1) {
-      transportMesh.visible = false;
-      return;
-    }
+    if (p < 1 - 1e-4 || p > iPen + 1e-4) return;
 
-    let hostIdx = iPen;
-    let cutoff = 1;
-
-    if (p <= iPen) {
-      // pieni su tutte le media fino a quella pre-peak
-      hostIdx = Math.min(Math.max(Math.floor(p), 1), iPen);
-      cutoff = 1;
-    } else {
-      // scompaiono con l’extract del media prima della mucca
-      hostIdx = iPen;
-      cutoff = 1 - (p - iPen);
-    }
-
-    const mesh = meshes[hostIdx];
-    if (!mesh || mesh.userData.isEndSlide) {
-      transportMesh.visible = false;
-      return;
-    }
-
-    const { w: fullW, h: fullH } = viewSize();
-    transportMesh.position.set(0, 0, 0.037);
-    transportMesh.scale.set(fullW, fullH, 1);
-    transportMesh.rotation.set(0, 0, 0);
-
-    const src = mesh.material.uniforms;
-    const mat = transportMesh.material;
-    mat.uniforms.uMap.value = src.uMap.value;
-    mat.uniforms.uMapHi.value = src.uMapHi.value;
-    mat.uniforms.uDetailMix.value = src.uDetailMix.value;
-    mat.uniforms.uCutoff.value = cutoff;
-    mat.uniforms.uImageSize.value.copy(src.uImageSize.value);
-    mat.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
-    mat.uniforms.uUsePrev.value = 0;
-
-    const vis = cutoff > 0.001;
-    transportMesh.visible = vis;
-    transportHitActive = vis && cutoff > 0.05;
+    transportHitActive = true;
   }
 
   function setTransportLabels(rew, toggle, ff, color = '#ffffff') {
@@ -3054,12 +2955,32 @@ export function createExperience(canvas) {
     return seq >= n - 2 - 1e-4;
   }
 
-  /** Morph B/N: landing scura + finale quasi bianco dietro la peak. */
+  /** Lift 0 = landing scura, 1 = bianco finale (progresso sequenza). */
+  function seqLiftT() {
+    const n = Math.max(meshes.length - 1, 1);
+    return easeInOut(THREE.MathUtils.clamp(seq / n, 0, 1));
+  }
+
+  function syncEdgeOnlyClear() {
+    if (mode === 'sequence' && !seqFillOn) {
+      const t = seqLiftT();
+      const c = Math.round(t * 255);
+      renderer.setClearColor((c << 16) | (c << 8) | c, 1);
+      return;
+    }
+    renderer.setClearColor(0x000000, 1);
+  }
+
+  /** Morph B/N: landing scura + finale quasi bianco dietro la peak.
+   *  Con fill off: stesso morph, lift scuro→chiaro lungo la sequenza. */
   function tickMorphBg(now = performance.now()) {
+    syncEdgeOnlyClear();
     if (!morphBg || morphTexs.length < 2) return;
 
     const endReveal = isEndReveal();
-    if (mode !== 'intro' && !endReveal) {
+    const edgeBg = mode === 'sequence' && !seqFillOn;
+
+    if (mode !== 'intro' && !endReveal && !edgeBg) {
       morphBg.visible = false;
       morphBg.material.uniforms.uLift.value = 0;
       morphLastTs = now;
@@ -3069,12 +2990,28 @@ export function createExperience(canvas) {
     const dt = Math.min(0.05, Math.max(0, (now - morphLastTs) / 1000));
     morphLastTs = now;
 
+    if (edgeBg) {
+      const lift = seqLiftT();
+      morphBg.visible = true;
+      morphBg.material.uniforms.uLift.value = lift;
+      morphBg.material.uniforms.uDim.value = THREE.MathUtils.lerp(0.75, 1, lift);
+      morphBg.material.uniforms.uTime.value = now * 0.001;
+      morphT += dt / 2.4;
+      if (morphT >= 1) {
+        morphT -= 1;
+        setMorphPair(morphIndex + 1);
+      }
+      const t = Math.min(morphT, 1);
+      const erase = t < 0.12 ? 0 : (t - 0.12) / 0.88;
+      morphBg.material.uniforms.uCutoff.value = 1 - easeInOut(erase);
+      return;
+    }
+
     if (endReveal) {
       morphBg.visible = true;
       morphBg.material.uniforms.uLift.value = 1;
       morphBg.material.uniforms.uDim.value = 1;
     } else {
-      // resta pieno in landing + chiusura ventaglio; si spegne solo con lo zoom (m)
       const m = easeInOut(Math.min(Math.max(intro - 1, 0), 1));
       const fade = Math.max(0, 1 - m);
       morphBg.visible = fade > 0.02;
@@ -3085,7 +3022,6 @@ export function createExperience(canvas) {
 
     morphBg.material.uniforms.uTime.value = now * 0.001;
 
-    // stesso ritmo della landing (~2.4s)
     morphT += dt / 2.4;
     if (morphT >= 1) {
       morphT -= 1;
@@ -3124,9 +3060,9 @@ export function createExperience(canvas) {
     ensureFull(active + 3);
     ensureFull(active - 1);
     if (keepGoingIndex >= 0) {
-      ensureFull(keepGoingIndex);
-      ensureFull(keepGoingIndex + 1);
-      ensureFull(keepGoingIndex - 1);
+      for (let k = -1; k <= KEEP_GOING_SPAN; k++) {
+        ensureFull(keepGoingIndex + k);
+      }
     }
     if (worthItIndex >= 0) {
       ensureFull(worthItIndex);
@@ -3145,19 +3081,27 @@ export function createExperience(canvas) {
       mesh.rotation.set(0, 0, 0);
       mesh.material.uniforms.uCover.value = 0;
       mesh.material.uniforms.uOpacity.value = 1;
-      // stessa grana statica della sequenza (anche sulla foto finale)
-      mesh.material.uniforms.uGrain.value = 0.045;
+      mesh.material.uniforms.uGrain.value = seqFillOn ? 0.022 : 0;
+      const edgeOnly = seqFillOn ? 0 : 1;
       if (mesh.material.uniforms.uEdgeOnly) {
-        mesh.material.uniforms.uEdgeOnly.value = 0;
+        mesh.material.uniforms.uEdgeOnly.value = edgeOnly;
       }
+      mesh.material.depthWrite = seqFillOn;
+      mesh.material.depthTest = seqFillOn;
+      mesh.material.transparent = true;
       mesh.renderOrder = n - i;
 
       if (p >= i + 1) {
         mesh.material.uniforms.uCutoff.value = 0;
         mesh.visible = false;
       } else if (p > i) {
+        // in erase: solo lo strato attivo
         mesh.visible = true;
         mesh.material.uniforms.uCutoff.value = 1 - (p - i);
+      } else if (!seqFillOn) {
+        // fill off: una sola media a schermo (niente stack di edge)
+        mesh.visible = i === active;
+        mesh.material.uniforms.uCutoff.value = 1;
       } else {
         mesh.visible = true;
         mesh.material.uniforms.uCutoff.value = 1;
@@ -3308,6 +3252,7 @@ export function createExperience(canvas) {
   }
 
   function resize() {
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
     updateCameraFrustum();
     const res = new THREE.Vector2(window.innerWidth, window.innerHeight);
@@ -3342,7 +3287,8 @@ export function createExperience(canvas) {
       Math.abs(ringVel.x) + Math.abs(ringVel.y) + Math.abs(ringVel.z) > 1e-4;
     return (
       (mode === 'intro' && (intro < 1.9 || ringDragging || spinning)) ||
-      isEndReveal()
+      isEndReveal() ||
+      (mode === 'sequence' && !seqFillOn)
     );
   }
 
@@ -3357,7 +3303,7 @@ export function createExperience(canvas) {
       layoutWorthItOverlay();
       layoutBackOverlay();
       layoutTransportOverlay();
-      if (isEndReveal()) tickMorphBg(performance.now());
+      if (isEndReveal() || !seqFillOn) tickMorphBg(performance.now());
     }
     if (mode === 'sequence' || intro > 1.3) {
       for (const mesh of meshes) {
@@ -3456,6 +3402,15 @@ export function createExperience(canvas) {
     isTransportHitActive: () => transportHitActive,
     isBackHitActive: () => backHitActive,
     captureBackFromDom,
+    setSeqFillOn(on) {
+      seqFillOn = Boolean(on);
+      syncEdgeOnlyClear();
+      if (mode === 'sequence') {
+        layout();
+        tickMorphBg(performance.now());
+      }
+    },
+    getSeqFillOn: () => seqFillOn,
     get count() {
       return items.length;
     },

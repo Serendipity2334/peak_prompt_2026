@@ -16,8 +16,8 @@ body.edges-page {
   font-family: var(--font-ui);
   font-weight: 400;
   -webkit-font-smoothing: antialiased;
-  /* unica misura testo (come clock / light / path) */
-  --ui-size: 0.42rem;
+  /* tipografia UI (chrome, HUD, frasi, transport) */
+  --ui-size: 0.85rem;
   --seq-hud-size: var(--ui-size);
   --landing-chrome-size: var(--ui-size);
   --seq-hud-weight: 400;
@@ -59,8 +59,8 @@ body.edges-page input {
   color: #fff;
   font-family: 'Geist Mono', ui-monospace, monospace;
   font-weight: 400;
-  /* più grandi del chrome: come le label prima che diventassero minuscole */
-  font-size: clamp(0.72rem, 1.25vw, 0.95rem);
+  /* allineate al resto della UI */
+  font-size: var(--ui-size);
   letter-spacing: 0.04em;
   line-height: 1.2;
   white-space: nowrap;

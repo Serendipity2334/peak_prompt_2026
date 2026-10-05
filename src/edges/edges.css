@@ -59,7 +59,7 @@ body.edges-page input {
   color: #fff;
   font-family: 'Geist Mono', ui-monospace, monospace;
   font-weight: 400;
-  font-size: clamp(0.78rem, 1.45vw, 1.05rem);
+  font-size: var(--landing-chrome-size);
   letter-spacing: 0.04em;
   line-height: 1.2;
   white-space: nowrap;

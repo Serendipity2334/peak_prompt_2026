@@ -643,8 +643,9 @@ export function createExperience(canvas) {
   let ringDragMode = 0;
   /** Zoom explore (1 = default). Con lo scroll torna a 1. */
   let exploreZoom = 1;
-  const EXPLORE_ZOOM_MIN = 0.55;
-  const EXPLORE_ZOOM_MAX = 2.35;
+  const EXPLORE_ZOOM_MIN = 0.65;
+  const EXPLORE_ZOOM_MAX = 2.8;
+  const EXPLORE_ZOOM_WHEEL = 0.0045;
   /** Pinch touch: id → {x,y} */
   const ringPointers = new Map();
   let pinchStartDist = 0;
@@ -790,6 +791,18 @@ export function createExperience(canvas) {
 
   function addExploreZoom(delta) {
     setExploreZoom(exploreZoom + delta);
+  }
+
+  /** Normalizza deltaY wheel (pixel / line / page) → fattore zoom. */
+  function wheelZoomDelta(deltaY, deltaMode = 0) {
+    let dy = Number(deltaY) || 0;
+    if (deltaMode === 1) dy *= 16;
+    else if (deltaMode === 2) dy *= 40;
+    return dy * EXPLORE_ZOOM_WHEEL;
+  }
+
+  function perspBaseDist() {
+    return 1 / Math.tan(THREE.MathUtils.degToRad(RING_FOV * 0.5));
   }
 
   function pointerDist(a, b) {
@@ -1332,11 +1345,14 @@ export function createExperience(canvas) {
     if (canExploreRing()) e.preventDefault();
   }
 
-  /** Pinch trackpad (Ctrl+wheel) o zoom esplicito. */
-  function onExploreZoomWheel(deltaY) {
+  /**
+   * Zoom da wheel: scroll down → zoom in; pinch Ctrl+wheel usa lo stesso segno di sistema
+   * (deltaY > 0 → zoom out). Passa `invert` false per pinch di sistema.
+   */
+  function onExploreZoomWheel(deltaY, deltaMode = 0, invert = true) {
     if (!canExploreRing()) return false;
-    // deltaY > 0 = pinch out / zoom out (gesto sistema)
-    addExploreZoom(-deltaY * 0.0018);
+    const d = wheelZoomDelta(deltaY, deltaMode);
+    addExploreZoom(invert ? d : -d);
     return true;
   }
 
@@ -1706,7 +1722,6 @@ export function createExperience(canvas) {
     backHitActive = false;
     if (transportMesh) transportMesh.visible = false;
     transportHitActive = false;
-    layoutMorphBg();
 
     // prefetch quando si inizia a raggruppare
     if (intro > 0.15) {
@@ -1749,13 +1764,17 @@ export function createExperience(canvas) {
     ringRoot.rotation.x = ringRot.x * explore;
     ringRoot.rotation.y = ringRot.y * explore;
     ringRoot.rotation.z = ringRot.z * explore;
-    // zoom explore → con lo scroll (g/m) torna a scala 1
+    ringRoot.scale.set(1, 1, 1);
+    ringRoot.position.set(0, 0, 0);
+    // zoom explore: dolly camera; con scroll (g/m) torna al default
     if (!canExploreRing() && explore < 0.02) {
       exploreZoom = 1;
     }
-    const zoomScale = 1 + (exploreZoom - 1) * explore;
-    ringRoot.scale.setScalar(zoomScale);
-    ringRoot.position.set(0, 0, 0);
+    const zoomAmt = 1 + (exploreZoom - 1) * explore;
+    const baseDist = perspBaseDist();
+    perspCam.position.set(0, 0, baseDist / Math.max(zoomAmt, 0.08));
+    perspCam.updateProjectionMatrix();
+    layoutMorphBg();
     canvas.style.cursor = canExploreRing()
       ? ringDragging
         ? 'grabbing'

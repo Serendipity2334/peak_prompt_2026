@@ -587,52 +587,30 @@ function onWheel(e) {
 
   if (playback.playing) stopPlayback();
 
-  // Convenzione: scroll up (deltaY < 0) → verso il peak;
-  // scroll down (deltaY > 0) → zoom in explore / indietro.
-  const dy = e.deltaY;
-  const up = dy < 0;
-  const down = dy > 0;
-
   if (exp.getMode() === 'intro') {
-    // pinch trackpad (Ctrl/Meta+wheel): zoom di sistema
+    // pinch trackpad (Ctrl/Meta+wheel) → zoom; scroll normale → ingresso
     if (e.ctrlKey || e.metaKey) {
-      if (exp.onExploreZoomWheel?.(dy, e.deltaMode, false)) {
+      if (exp.onExploreZoomWheel?.(e.deltaY, e.deltaMode, false)) {
         kick();
         return;
       }
     }
-
-    if (exp.canExploreRing?.()) {
-      if (down) {
-        // scroll down → zoom in
-        exp.onExploreZoomWheel?.(dy, e.deltaMode, true);
-        kick();
-        return;
-      }
-      // scroll up: prima togli lo zoom, poi parti verso il peak
-      if (up && (exp.getExploreZoom?.() ?? 1) > 1.02) {
-        exp.onExploreZoomWheel?.(dy, e.deltaMode, true);
-        kick();
-        return;
-      }
-    }
-
-    exp.addIntro(-dy * INTRO_WHEEL);
+    exp.addIntro(e.deltaY * INTRO_WHEEL);
     syncMode();
     kick();
     return;
   }
 
-  // sequenza: all’inizio, scroll down torna alla raggiera
-  if (down && exp.getSeq() <= 0.02) {
+  // sequenza: all’inizio, ↑ torna alla raggiera (stesso render)
+  if (e.deltaY < 0 && exp.getSeq() <= 0.02) {
     exp.exitToIntro(1.85);
-    exp.addIntro(-dy * INTRO_WHEEL);
+    exp.addIntro(e.deltaY * INTRO_WHEEL);
     syncMode();
     kick();
     return;
   }
 
-  exp.addSeq(-dy * SEQ_WHEEL);
+  exp.addSeq(e.deltaY * SEQ_WHEEL);
   syncMode();
   kick();
 }

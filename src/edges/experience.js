@@ -557,12 +557,11 @@ function loadVideoTexture(src) {
     const video = document.createElement('video');
     video.src = src;
     video.crossOrigin = 'anonymous';
-    video.autoplay = true;
+    video.autoplay = false;
     video.loop = true;
     video.muted = true;
     video.defaultMuted = true;
     video.playsInline = true;
-    video.setAttribute('autoplay', '');
     video.setAttribute('loop', '');
     video.setAttribute('muted', '');
     video.setAttribute('playsinline', '');
@@ -583,7 +582,12 @@ function loadVideoTexture(src) {
     const onReady = () => {
       video.removeEventListener('loadeddata', onReady);
       video.removeEventListener('error', onError);
-      video.play().catch(() => {});
+      // resta in pausa: play solo quando la slide è attiva (syncVideos)
+      try {
+        video.pause();
+      } catch {
+        /* ignore */
+      }
       const texture = prepTex(new THREE.VideoTexture(video));
       texture.userData.video = video;
       resolve(texture);
@@ -1520,14 +1524,8 @@ export function createExperience(canvas) {
           const video = fullTex.userData.video;
           const active =
             mode === 'sequence' ? getSeqIndex() : mode === 'intro' ? 0 : -1;
-          const near = Math.abs(index - active) <= 1;
-          // seek solo in prefetch (fuori schermo): in play evita il ritardo
-          if (!near) {
-            try {
-              video.currentTime = 0.12;
-            } catch {
-              /* ignore */
-            }
+          // niente seek in prefetch: evita hitch sul decoder
+          if (index !== active) {
             video.pause();
           }
         } else {
@@ -1538,7 +1536,7 @@ export function createExperience(canvas) {
         applyFull(mesh, fullTex);
         if (item.kind === 'video') {
           const active = mode === 'sequence' ? getSeqIndex() : -1;
-          if (mode === 'sequence' && Math.abs(index - active) <= 1) {
+          if (mode === 'sequence' && index === active) {
             setDetail(mesh, 1);
             fullTex.userData.video?.play().catch(() => {});
           }
@@ -1629,17 +1627,17 @@ export function createExperience(canvas) {
     resetRingSpin();
     layout();
 
-    // preload full dei primi + prefetch video in background (no stacco in sequenza)
+    // preload full dei primi; altri video on-demand in sequenza
     ensureFull(0);
     ensureFull(1);
     ensureFull(2);
-    void prefetchVideoFulls();
+    void prefetchNearbyVideos(0);
   }
 
-  /** Carica i full video in anticipo (2 alla volta) così partono subito in sequenza. */
-  async function prefetchVideoFulls() {
+  /** Prefetch leggero: solo i prossimi video vicini, non tutti e 36. */
+  async function prefetchNearbyVideos(fromIndex) {
     const idxs = [];
-    for (let i = 0; i < items.length; i++) {
+    for (let i = Math.max(0, fromIndex); i < items.length && idxs.length < 4; i++) {
       if (items[i]?.kind === 'video') idxs.push(i);
     }
     for (let i = 0; i < idxs.length; i += 2) {
@@ -3156,11 +3154,10 @@ export function createExperience(canvas) {
     const p = Math.min(Math.max(seq, 0), max);
     const active = Math.min(Math.floor(p), Math.max(n - 1, 0));
 
-    // lazy full intorno all’attivo (+ lookahead video)
+    // lazy full intorno all’attivo
     ensureFull(active);
     ensureFull(active + 1);
     ensureFull(active + 2);
-    ensureFull(active + 3);
     ensureFull(active - 1);
     if (keepGoingIndex >= 0) {
       for (let k = -1; k <= KEEP_GOING_SPAN; k++) {
@@ -3227,12 +3224,12 @@ export function createExperience(canvas) {
       }
       return;
     }
+    // un solo decoder attivo: evita scatti da doppia riproduzione
     const active = getSeqIndex();
     for (let i = 0; i < meshes.length; i++) {
       const video = meshes[i].userData.video;
       if (!video) continue;
-      const near = Math.abs(i - active) <= 1 && meshes[i].visible;
-      if (near) {
+      if (i === active && meshes[i].visible) {
         if (video.paused) video.play().catch(() => {});
       } else if (!video.paused) {
         video.pause();
@@ -3291,11 +3288,6 @@ export function createExperience(canvas) {
     layoutSequence(w, h);
     const video = meshes[0]?.userData.video;
     if (video) {
-      try {
-        video.currentTime = Math.min(video.currentTime || 0.12, 0.2);
-      } catch {
-        /* ignore */
-      }
       video.play().catch(() => {});
     }
     syncVideos();
@@ -3408,13 +3400,7 @@ export function createExperience(canvas) {
       layoutTransportOverlay();
       if (isEndReveal() || !seqFillOn) tickMorphBg(performance.now());
     }
-    if (mode === 'sequence' || intro > 1.3) {
-      for (const mesh of meshes) {
-        if (mesh.userData.video && mesh.visible && mesh.userData.detail > 0.2) {
-          mesh.userData.texture.needsUpdate = true;
-        }
-      }
-    }
+    // VideoTexture aggiorna i frame da sola (RVFC); niente needsUpdate forzato
     syncVideos();
     renderer.render(scene, activeCamera());
   }

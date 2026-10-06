@@ -641,6 +641,14 @@ export function createExperience(canvas) {
   let ringDragLastY = 0;
   /** 0 = pitch/yaw, 2 = roll (tasto destro o Shift). */
   let ringDragMode = 0;
+  /** Zoom explore (1 = default). Con lo scroll torna a 1. */
+  let exploreZoom = 1;
+  const EXPLORE_ZOOM_MIN = 0.55;
+  const EXPLORE_ZOOM_MAX = 2.35;
+  /** Pinch touch: id → {x,y} */
+  const ringPointers = new Map();
+  let pinchStartDist = 0;
+  let pinchStartZoom = 1;
   /** @type {'clock' | 'path' | 'light'} */
   let landingView = 'clock';
   /** @type {Awaited<ReturnType<typeof loadRoutePath>> | null} */
@@ -756,6 +764,7 @@ export function createExperience(canvas) {
   function flattenRingRoot() {
     ringRoot.rotation.set(0, 0, 0);
     ringRoot.position.set(0, 0, 0);
+    ringRoot.scale.set(1, 1, 1);
   }
 
   function resetRingSpin() {
@@ -766,6 +775,27 @@ export function createExperience(canvas) {
     ringVel.y = 0;
     ringVel.z = 0;
     ringDragging = false;
+    exploreZoom = 1;
+    pinchStartDist = 0;
+    ringPointers.clear();
+  }
+
+  function setExploreZoom(z) {
+    exploreZoom = THREE.MathUtils.clamp(
+      Number(z) || 1,
+      EXPLORE_ZOOM_MIN,
+      EXPLORE_ZOOM_MAX
+    );
+  }
+
+  function addExploreZoom(delta) {
+    setExploreZoom(exploreZoom + delta);
+  }
+
+  function pointerDist(a, b) {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return Math.hypot(dx, dy);
   }
 
   function getLandingView() {
@@ -1190,6 +1220,23 @@ export function createExperience(canvas) {
 
   function onRingPointerDown(e) {
     if (!canExploreRing()) return;
+    ringPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    // pinch a 2 dita → zoom (niente rotate)
+    if (ringPointers.size >= 2) {
+      ringDragging = false;
+      ringDragMode = 0;
+      const pts = [...ringPointers.values()];
+      pinchStartDist = pointerDist(pts[0], pts[1]) || 1;
+      pinchStartZoom = exploreZoom;
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+
     // sinistro = X/Y; destro o Shift = Z (roll)
     const roll =
       e.button === 2 || e.shiftKey || (e.buttons & 2) !== 0;
@@ -1211,7 +1258,22 @@ export function createExperience(canvas) {
   }
 
   function onRingPointerMove(e) {
-    if (!ringDragging || !canExploreRing()) return;
+    if (!canExploreRing()) return;
+
+    if (ringPointers.has(e.pointerId)) {
+      ringPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
+
+    if (ringPointers.size >= 2) {
+      const pts = [...ringPointers.values()];
+      const d = pointerDist(pts[0], pts[1]);
+      if (pinchStartDist > 1) {
+        setExploreZoom(pinchStartZoom * (d / pinchStartDist));
+      }
+      return;
+    }
+
+    if (!ringDragging) return;
     const dx = e.clientX - ringDragLastX;
     const dy = e.clientY - ringDragLastY;
     ringDragLastX = e.clientX;
@@ -1236,6 +1298,25 @@ export function createExperience(canvas) {
   }
 
   function onRingPointerUp(e) {
+    ringPointers.delete(e.pointerId);
+    if (ringPointers.size < 2) {
+      pinchStartDist = 0;
+    }
+    if (ringPointers.size === 1) {
+      // riprendi drag con il dito rimasto
+      const rest = [...ringPointers.entries()][0];
+      if (rest) {
+        ringDragLastX = rest[1].x;
+        ringDragLastY = rest[1].y;
+        ringDragging = true;
+        ringDragMode = 0;
+      }
+      return;
+    }
+    if (!ringDragging && ringPointers.size === 0) {
+      canvas.style.cursor = canExploreRing() ? 'grab' : '';
+      return;
+    }
     if (!ringDragging) return;
     ringDragging = false;
     ringDragMode = 0;
@@ -1249,6 +1330,14 @@ export function createExperience(canvas) {
 
   function onRingContextMenu(e) {
     if (canExploreRing()) e.preventDefault();
+  }
+
+  /** Pinch trackpad (Ctrl+wheel) o zoom esplicito. */
+  function onExploreZoomWheel(deltaY) {
+    if (!canExploreRing()) return false;
+    // deltaY > 0 = pinch out / zoom out (gesto sistema)
+    addExploreZoom(-deltaY * 0.0018);
+    return true;
   }
 
   function bindRingDrag() {
@@ -1660,6 +1749,12 @@ export function createExperience(canvas) {
     ringRoot.rotation.x = ringRot.x * explore;
     ringRoot.rotation.y = ringRot.y * explore;
     ringRoot.rotation.z = ringRot.z * explore;
+    // zoom explore → con lo scroll (g/m) torna a scala 1
+    if (!canExploreRing() && explore < 0.02) {
+      exploreZoom = 1;
+    }
+    const zoomScale = 1 + (exploreZoom - 1) * explore;
+    ringRoot.scale.setScalar(zoomScale);
     ringRoot.position.set(0, 0, 0);
     canvas.style.cursor = canExploreRing()
       ? ringDragging
@@ -3402,6 +3497,10 @@ export function createExperience(canvas) {
     isTransportHitActive: () => transportHitActive,
     isBackHitActive: () => backHitActive,
     captureBackFromDom,
+    canExploreRing,
+    addExploreZoom,
+    onExploreZoomWheel,
+    getExploreZoom: () => exploreZoom,
     setSeqFillOn(on) {
       seqFillOn = Boolean(on);
       syncEdgeOnlyClear();

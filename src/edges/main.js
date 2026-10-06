@@ -588,13 +588,6 @@ function onWheel(e) {
   if (playback.playing) stopPlayback();
 
   if (exp.getMode() === 'intro') {
-    // pinch trackpad (Ctrl/Meta+wheel) → zoom; scroll normale → ingresso
-    if (e.ctrlKey || e.metaKey) {
-      if (exp.onExploreZoomWheel?.(e.deltaY, e.deltaMode, false)) {
-        kick();
-        return;
-      }
-    }
     exp.addIntro(e.deltaY * INTRO_WHEEL);
     syncMode();
     kick();

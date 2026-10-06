@@ -1524,8 +1524,9 @@ export function createExperience(canvas) {
           const video = fullTex.userData.video;
           const active =
             mode === 'sequence' ? getSeqIndex() : mode === 'intro' ? 0 : -1;
+          const near = Math.abs(index - active) <= 1;
           // niente seek in prefetch: evita hitch sul decoder
-          if (index !== active) {
+          if (!near) {
             video.pause();
           }
         } else {
@@ -1536,7 +1537,7 @@ export function createExperience(canvas) {
         applyFull(mesh, fullTex);
         if (item.kind === 'video') {
           const active = mode === 'sequence' ? getSeqIndex() : -1;
-          if (mode === 'sequence' && index === active) {
+          if (mode === 'sequence' && Math.abs(index - active) <= 1) {
             setDetail(mesh, 1);
             fullTex.userData.video?.play().catch(() => {});
           }
@@ -3224,12 +3225,13 @@ export function createExperience(canvas) {
       }
       return;
     }
-    // un solo decoder attivo: evita scatti da doppia riproduzione
+    // attivo + sotto (fill): entrambi in play se visibili
     const active = getSeqIndex();
     for (let i = 0; i < meshes.length; i++) {
       const video = meshes[i].userData.video;
       if (!video) continue;
-      if (i === active && meshes[i].visible) {
+      const near = Math.abs(i - active) <= 1 && meshes[i].visible;
+      if (near) {
         if (video.paused) video.play().catch(() => {});
       } else if (!video.paused) {
         video.pause();

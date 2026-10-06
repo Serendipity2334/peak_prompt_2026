@@ -579,18 +579,47 @@ function loadVideoTexture(src) {
     });
     document.body.appendChild(video);
 
-    const onReady = () => {
-      video.removeEventListener('loadeddata', onReady);
-      video.removeEventListener('error', onError);
-      // resta in pausa: play solo quando la slide è attiva (syncVideos)
+    const finish = () => {
       try {
         video.pause();
       } catch {
         /* ignore */
       }
       const texture = prepTex(new THREE.VideoTexture(video));
+      texture.needsUpdate = true;
       texture.userData.video = video;
       resolve(texture);
+    };
+
+    const onReady = () => {
+      video.removeEventListener('loadeddata', onReady);
+      video.removeEventListener('error', onError);
+      // decodifica almeno un frame: senza, uMapHi è nero e sparisce il fill
+      const t = Math.min(0.12, Math.max(0.04, (video.duration || 1) * 0.03));
+      let settled = false;
+      const settle = () => {
+        if (settled) return;
+        settled = true;
+        video.removeEventListener('seeked', onSeeked);
+        finish();
+      };
+      const onSeeked = () => settle();
+      video.addEventListener('seeked', onSeeked);
+      window.setTimeout(settle, 400);
+      try {
+        if (video.readyState >= 2 && video.videoWidth > 0 && video.currentTime >= 0.02) {
+          settle();
+        } else {
+          video.currentTime = t;
+        }
+      } catch {
+        video
+          .play()
+          .then(() => {
+            requestAnimationFrame(() => settle());
+          })
+          .catch(() => settle());
+      }
     };
     const onError = () => {
       video.removeEventListener('loadeddata', onReady);
@@ -1536,9 +1565,10 @@ export function createExperience(canvas) {
         }
         applyFull(mesh, fullTex);
         if (item.kind === 'video') {
+          // resta sulla thumb finché updateDetailMix non vede un frame valido
+          setDetail(mesh, 0);
           const active = mode === 'sequence' ? getSeqIndex() : -1;
           if (mode === 'sequence' && Math.abs(index - active) <= 1) {
-            setDetail(mesh, 1);
             fullTex.userData.video?.play().catch(() => {});
           }
           syncVideos();
@@ -1663,10 +1693,13 @@ export function createExperience(canvas) {
         const mesh = meshes[i];
         if (!mesh.userData.fullReady) continue;
         const near = Math.abs(i - active) <= 1;
-        const target = near ? 1 : mesh.userData.detail;
-        if (near && mesh.userData.detail < 1) {
+        if (!near) continue;
+        // video: non passare al full finché non c’è un frame (evita nero sotto gli edge)
+        const v = mesh.userData.video;
+        if (v && !(v.videoWidth > 0 && v.readyState >= 2)) continue;
+        if (mesh.userData.detail < 1) {
           setDetail(mesh, Math.min(1, mesh.userData.detail + 0.08));
-        } else if (near) {
+        } else {
           setDetail(mesh, 1);
         }
       }
@@ -3402,7 +3435,19 @@ export function createExperience(canvas) {
       layoutTransportOverlay();
       if (isEndReveal() || !seqFillOn) tickMorphBg(performance.now());
     }
-    // VideoTexture aggiorna i frame da sola (RVFC); niente needsUpdate forzato
+    // solo video visibili con dettaglio: evita upload di tutta la stack
+    if (mode === 'sequence' || intro > 1.3) {
+      for (const mesh of meshes) {
+        if (
+          mesh.userData.video &&
+          mesh.visible &&
+          mesh.userData.detail > 0.05 &&
+          mesh.userData.texture
+        ) {
+          mesh.userData.texture.needsUpdate = true;
+        }
+      }
+    }
     syncVideos();
     renderer.render(scene, activeCamera());
   }

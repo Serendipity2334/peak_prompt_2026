@@ -587,7 +587,6 @@ function onWheel(e) {
 
   if (playback.playing) stopPlayback();
 
-  // scroll up (deltaY < 0) → verso il peak
   if (exp.getMode() === 'intro') {
     if (
       (e.ctrlKey || e.metaKey) &&
@@ -596,22 +595,23 @@ function onWheel(e) {
       kick();
       return;
     }
-    exp.addIntro(-e.deltaY * INTRO_WHEEL);
+    // scroll up (gesto dito verso l’alto) → peak
+    exp.addIntro(e.deltaY * INTRO_WHEEL);
     syncMode();
     kick();
     return;
   }
 
   // sequenza: all’inizio, scroll down torna alla raggiera
-  if (e.deltaY > 0 && exp.getSeq() <= 0.02) {
+  if (e.deltaY < 0 && exp.getSeq() <= 0.02) {
     exp.exitToIntro(1.85);
-    exp.addIntro(-e.deltaY * INTRO_WHEEL);
+    exp.addIntro(e.deltaY * INTRO_WHEEL);
     syncMode();
     kick();
     return;
   }
 
-  exp.addSeq(-e.deltaY * SEQ_WHEEL);
+  exp.addSeq(e.deltaY * SEQ_WHEEL);
   syncMode();
   kick();
 }
